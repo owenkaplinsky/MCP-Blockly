@@ -4,7 +4,7 @@ export const forBlock = Object.create(null);
 
 // Generates a Python function that runs when the user sends a message
 forBlock['when_user_sends'] = function (block, generator) {
-  const body = generator.statementToCode(block, 'code') || "";
+  const body = generator.statementToCode(block, 'CODE') || "";
   const code = `def on_user_send(user_message):\n${body}  return\n`;
   return code;
 };
@@ -23,4 +23,9 @@ forBlock['get_assistant_response'] = function (block, generator) {
 
   const code = `get_assistant_response(${prompt}, model="${model}", use_history=${history})`;
   return [code, Order.NONE];
+};
+
+forBlock['user_message'] = function (block, generator) {
+  const code = `user_message`;
+  return [code, generator.ORDER_NONE];
 };

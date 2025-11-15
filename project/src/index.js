@@ -1,15 +1,10 @@
-/**
- * @license
- * Copyright 2023 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import * as Blockly from 'blockly';
 import { blocks } from './blocks/text';
 import { forBlock } from './generators/python';
 import { pythonGenerator } from 'blockly/python';
 import { save, load } from './serialization';
 import { toolbox } from './toolbox';
+import '@blockly/toolbox-search';
 import './index.css';
 
 // Register the blocks and generator with Blockly
@@ -48,20 +43,15 @@ const myTheme = Blockly.Theme.defineTheme('myScratchTheme', {
 // Inject Blockly with theme + renderer
 const ws = Blockly.inject(blocklyDiv, {
   toolbox,
+  grid: {
+    spacing: 35,
+    length: 3,
+    colour: '#ccc',
+    snap: false
+  },
   renderer: 'zelos',
   theme: myTheme,
 });
-
-if (!ws.getVariable('user_message')) {
-  ws.createVariable('user_message');
-}
-
-ws.updateUserMessage = (message) => {
-  let variable = ws.getVariable('user_message');
-  if (!variable) ws.createVariable('user_message');
-  ws.variableValues = ws.variableValues || {};
-  ws.variableValues['user_message'] = message;
-};
 
 const updateCode = () => {
   let code = pythonGenerator.workspaceToCode(ws);
@@ -120,8 +110,45 @@ updateCode();
 ws.addChangeListener((e) => {
   if (e.isUiEvent) return;
 
-  if (!ws.getVariable('user_message')) {
-    ws.createVariable('user_message');
+  save(ws);
+});
+
+ws.addChangeListener((event) => {
+  if (event.isUiEvent) return;
+
+  if (event.type === Blockly.Events.BLOCK_MOVE) {
+    if (event.oldParentId && !event.newParentId) {
+      const removedBlock = ws.getBlockById(event.blockId);
+      const oldParent = ws.getBlockById(event.oldParentId);
+
+      if (
+        removedBlock &&
+        oldParent &&
+        removedBlock.type === 'user_message' &&
+        oldParent.type === 'when_user_sends'
+      ) {
+        console.log('[DISCONNECT] user_message removed from when_user_sends');
+
+        if (event.oldInputName) {
+          Blockly.Events.disable();
+          try {
+            const newMsgBlock = ws.newBlock('user_message');
+            newMsgBlock.initSvg();
+            newMsgBlock.render();
+
+            const input = oldParent.getInput(event.oldInputName);
+            if (input) {
+              input.connection.connect(newMsgBlock.outputConnection);
+              console.log('[REPLACE] user_message restored instantly (no blink)');
+            }
+
+            ws.render(); // ensure workspace updates immediately
+          } finally {
+            Blockly.Events.enable();
+          }
+        }
+      }
+    }
   }
 
   save(ws);
@@ -141,16 +168,14 @@ window.addEventListener("message", (event) => {
 });
 
 function handleUserMessage(message) {
-  if (window.Blockly && window.ws) {
-    let v = ws.getVariable('user_message') || ws.createVariable('user_message');
-    ws.variableValues = ws.variableValues || {};
-    ws.variableValues['user_message'] = message;
+  const blocks = ws.getAllBlocks();
+  const msgBlock = blocks.find(b => b.type === 'user_message');
+  if (msgBlock) {
+    msgBlock.setFieldValue(message, 'TEXT');
+    console.log(`[Blockly] Updated user_message with: ${message}`);
   }
 
   if (typeof window.userSendHandler === "function") {
-    console.log("[PARENT] userSendHandler exists, invoking it");
     window.userSendHandler(message);
-  } else {
-    console.warn("[PARENT] userSendHandler is undefined!");
   }
 }

@@ -24,6 +24,7 @@
     "webpack-dev-server": "^4.11.1"
   },
   "dependencies": {
+    "@blockly/toolbox-search": "^3.0.2",
     "blockly": "^11.0.0"
   }
 }

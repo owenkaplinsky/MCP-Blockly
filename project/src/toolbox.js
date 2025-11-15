@@ -1,20 +1,14 @@
-/**
- * @license
- * Copyright 2023 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
-/*
-This toolbox contains nearly every single built-in block that Blockly offers,
-in addition to the custom block 'add_text' this sample app adds.
-You probably don't need every single block, and should consider either rewriting
-your toolbox from scratch, or carefully choosing whether you need each block
-listed here.
-*/
-
 export const toolbox = {
   kind: 'categoryToolbox',
   contents: [
+    {
+      'kind': 'search',
+      'name': 'Search',
+      'contents': [],
+    },
+    {
+      'kind': 'sep',
+    },
     {
       kind: 'category',
       name: 'Custom',
@@ -23,6 +17,14 @@ export const toolbox = {
         {
           kind: 'block',
           type: 'when_user_sends',
+          inputs: {
+            DUPLICATE: {
+              block: {
+                kind: "block",
+                type: "user_message"
+              }
+            },
+          },
         },
         {
           kind: 'block',
@@ -34,16 +36,15 @@ export const toolbox = {
           inputs: {
             PROMPT: {
               shadow: {
-                type: "variables_get",
-                fields: {
-                  VAR: {
-                    name: "user_message",
-                    type: "String"
-                  }
-                }
+                kind: "block",
+                type: "user_message"
               }
             },
           },
+        },
+        {
+          kind: 'block',
+          type: 'user_message',
         },
       ]
     },
@@ -499,24 +500,6 @@ export const toolbox = {
         },
         {
           kind: 'block',
-          type: 'lists_create_with',
-        },
-        {
-          kind: 'block',
-          type: 'lists_repeat',
-          inputs: {
-            NUM: {
-              shadow: {
-                type: 'math_number',
-                fields: {
-                  NUM: 5,
-                },
-              },
-            },
-          },
-        },
-        {
-          kind: 'block',
           type: 'lists_length',
         },
         {
@@ -569,20 +552,6 @@ export const toolbox = {
         },
         {
           kind: 'block',
-          type: 'lists_split',
-          inputs: {
-            DELIM: {
-              shadow: {
-                type: 'text',
-                fields: {
-                  TEXT: ',',
-                },
-              },
-            },
-          },
-        },
-        {
-          kind: 'block',
           type: 'lists_sort',
         },
         {
@@ -602,7 +571,7 @@ export const toolbox = {
     },
     {
       kind: 'category',
-      name: 'Functions',
+      name: 'Tools',
       categorystyle: 'procedure_category',
       custom: 'PROCEDURE',
     },

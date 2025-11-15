@@ -1,21 +1,19 @@
-/**
- * @license
- * Copyright 2023 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import * as Blockly from 'blockly/core';
 
 const whenUserSends = {
   type: 'when_user_sends',
-  message0: 'when user sends message do %1 %2',
+  message0: 'when user sends %1 do %2 %3',
   args0: [
+    {
+      "type": "input_value",
+      "name": "DUPLICATE"
+    },
     {
       "type": "input_dummy"
     },
     {
       "type": "input_statement",
-      "name": "code"
+      "name": "CODE"
     }
   ],
   inputsInline: true,
@@ -43,7 +41,7 @@ const assistantReply = {
 
 const getAssistantResponse = {
   type: 'get_assistant_response',
-  message0: 'call model %1 with prompt %2 with %3',
+  message0: 'call model %1 with prompt %2 %3 history',
   args0: [
     {
       type: 'field_dropdown',
@@ -62,8 +60,8 @@ const getAssistantResponse = {
       type: 'field_dropdown',
       name: 'HISTORY',
       options: [
-        ["history", "True"],
-        ["no history", "False"]
+        ["with", "True"],
+        ["without", "False"]
       ]
     },
   ],
@@ -74,8 +72,18 @@ const getAssistantResponse = {
   helpUrl: '',
 };
 
+const user_message = {
+  type: "user_message",
+  message0: "user message",
+  output: "String",
+  colour: "#47A8D1",
+  tooltip: "",
+  helpUrl: "",
+};
+
 export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   whenUserSends,
   assistantReply,
   getAssistantResponse,
+  user_message
 ]);
