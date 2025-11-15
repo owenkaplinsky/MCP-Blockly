@@ -1,0 +1,56 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  max-width: 100vw;
+}
+
+#pageContainer {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#blocklyDiv {
+  flex: 1;
+  min-width: 600px;
+  height: 100%;
+}
+
+#outputPane {
+  display: flex;
+  flex-direction: column;
+  width: 400px;
+  flex-shrink: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+#chatContainer {
+  flex: 0 0 400px;
+  /* fixed height for iframe area */
+  width: 100%;
+}
+
+#chatContainer iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+#generatedCode {
+  flex: 1;
+  background: #111;
+  color: #0f0;
+  padding: 10px;
+  font-family: monospace;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  border: 1px solid #333;
+  margin-top: 10px;
+}
