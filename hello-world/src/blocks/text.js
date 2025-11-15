@@ -8,7 +8,7 @@ import * as Blockly from 'blockly/core';
 
 const whenUserSends = {
   type: 'when_user_sends',
-  message0: 'When user sends msg do %1 %2',
+  message0: 'when user sends message do %1 %2',
   args0: [
     {
       "type": "input_dummy"
@@ -26,7 +26,7 @@ const whenUserSends = {
 
 const assistantReply = {
   type: 'assistant_reply',
-  message0: 'Reply with %1',
+  message0: 'reply with %1',
   args0: [
     {
       type: 'input_value',
@@ -41,7 +41,41 @@ const assistantReply = {
   helpUrl: '',
 };
 
+const getAssistantResponse = {
+  type: 'get_assistant_response',
+  message0: 'call model %1 with prompt %2 with %3',
+  args0: [
+    {
+      type: 'field_dropdown',
+      name: 'MODEL',
+      options: [
+        ['gpt-3.5-turbo', 'gpt-3.5-turbo-0125'],
+        ['gpt-5-mini', 'gpt-5-mini-2025-08-07'],
+      ],
+    },
+    {
+      type: 'input_value',
+      name: 'PROMPT',
+      check: 'String',
+    },
+    {
+      type: 'field_dropdown',
+      name: 'HISTORY',
+      options: [
+        ["history", "True"],
+        ["no history", "False"]
+      ]
+    },
+  ],
+  inputsInline: true,
+  output: 'String',
+  colour: 230,
+  tooltip: 'Call the selected OpenAI model to get a response.',
+  helpUrl: '',
+};
+
 export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   whenUserSends,
   assistantReply,
+  getAssistantResponse,
 ]);

@@ -28,6 +28,23 @@ export const toolbox = {
           kind: 'block',
           type: 'assistant_reply',
         },
+        {
+          kind: 'block',
+          type: 'get_assistant_response',
+          inputs: {
+            PROMPT: {
+              shadow: {
+                type: "variables_get",
+                fields: {
+                  VAR: {
+                    name: "user_message",
+                    type: "String"
+                  }
+                }
+              }
+            },
+          },
+        },
       ]
     },
     {
@@ -192,10 +209,6 @@ export const toolbox = {
         },
         {
           kind: 'block',
-          type: 'math_constant',
-        },
-        {
-          kind: 'block',
           type: 'math_number_property',
           inputs: {
             NUMBER_TO_CHECK: {
@@ -223,13 +236,6 @@ export const toolbox = {
                 },
               },
             },
-          },
-        },
-        {
-          kind: 'block',
-          type: 'math_on_list',
-          fields: {
-            OP: 'SUM',
           },
         },
         {
@@ -305,10 +311,6 @@ export const toolbox = {
               },
             },
           },
-        },
-        {
-          kind: 'block',
-          type: 'math_random_float',
         },
       ],
     },

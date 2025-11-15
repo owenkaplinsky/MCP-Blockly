@@ -52,6 +52,10 @@ const ws = Blockly.inject(blocklyDiv, {
   theme: myTheme,
 });
 
+if (!ws.getVariable('user_message')) {
+  ws.createVariable('user_message');
+}
+
 ws.updateUserMessage = (message) => {
   let variable = ws.getVariable('user_message');
   if (!variable) ws.createVariable('user_message');
@@ -59,9 +63,33 @@ ws.updateUserMessage = (message) => {
   ws.variableValues['user_message'] = message;
 };
 
-const runCode = () => {
-  const code = pythonGenerator.workspaceToCode(ws);
+const updateCode = () => {
+  let code = pythonGenerator.workspaceToCode(ws);
   const codeEl = document.querySelector('#generatedCode code');
+
+  const response = `def get_assistant_response(prompt, model, use_history=True):
+  global history
+  from openai import OpenAI
+  import os
+
+  client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+  if use_history:
+      messages = history + [{"role": "user", "content": prompt}]
+  else:
+      messages = [{"role": "user", "content": prompt}]
+
+  completion = client.chat.completions.create(model=model, messages=messages)
+  return completion.choices[0].message.content.strip()
+  
+`;
+
+  const blocks = ws.getAllBlocks(false);
+  const hasResponse = blocks.some(block => block.type === 'assistant_reply');
+
+  if (hasResponse) {
+    code = response + code;
+  }
 
   if (codeEl) {
     codeEl.textContent = code;
@@ -87,10 +115,15 @@ try {
   console.warn('Workspace load failed, clearing storage:', e);
   localStorage.clear();
 }
-runCode();
+updateCode();
 
 ws.addChangeListener((e) => {
   if (e.isUiEvent) return;
+
+  if (!ws.getVariable('user_message')) {
+    ws.createVariable('user_message');
+  }
+
   save(ws);
 });
 
@@ -98,7 +131,7 @@ ws.addChangeListener((e) => {
   if (e.isUiEvent || e.type == Blockly.Events.FINISHED_LOADING || ws.isDragging()) {
     return;
   }
-  runCode();
+  updateCode();
 });
 
 window.addEventListener("message", (event) => {
