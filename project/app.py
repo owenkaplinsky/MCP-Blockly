@@ -2,9 +2,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import uvicorn
-import asyncio
-import threading
-import os
 from dotenv import load_dotenv
 
 app = FastAPI()
@@ -19,15 +16,7 @@ app.add_middleware(
 
 load_dotenv()
 
-history = []
 latest_blockly_code = ""
-assistant_queue = asyncio.Queue()
-
-
-async def reply(message):
-    global history, assistant_queue
-    history.append({"role": "assistant", "content": message})
-    await assistant_queue.put(message)
 
 
 @app.post("/update_code")
@@ -39,61 +28,120 @@ async def update_code(request: Request):
     return {"ok": True}
 
 
-def execute_blockly_logic(user_message: str, loop):
-    global latest_blockly_code, history
+def execute_blockly_logic(user_inputs):
+    global latest_blockly_code
     if not latest_blockly_code.strip():
-        return
+        return "No Blockly code available"
 
-    def safe_reply(msg):
-        asyncio.run_coroutine_threadsafe(reply(msg), loop)
+    result = ""
+    
+    def capture_result(msg):
+        nonlocal result
+        result = msg
 
     env = {
-        "reply": safe_reply,
-        "history": history,
-        "print": print,
+        "reply": capture_result,
     }
 
     try:
         exec(latest_blockly_code, env)
-        if "on_user_send" in env:
-            env["on_user_send"](user_message)
+        if "create_mcp" in env:
+            # If create_mcp function exists, call it with the input arguments
+            # Filter out None values and convert to list for unpacking
+            args = [arg for arg in user_inputs if arg is not None]
+            result = env["create_mcp"](*args)
+        elif "process_input" in env:
+            env["process_input"](user_inputs)
     except Exception as e:
         print("[EXECUTION ERROR]", e)
+        result = f"Error: {str(e)}"
 
-
-def run_blockly_thread(user_message):
-    loop = asyncio.get_running_loop()
-    thread = threading.Thread(target=execute_blockly_logic, args=(user_message, loop))
-    thread.start()
+    return result if result else "No output generated"
 
 
 def build_interface():
     with gr.Blocks() as demo:
-        chatbot = gr.Chatbot(type="messages", label="Assistant", group_consecutive_messages=False)
-        msg = gr.Textbox(placeholder="Type a message and press Enter")
+        gr.Markdown("# Blockly Code Executor")
+        
+        # Create a fixed number of potential input fields (max 10)
+        input_fields = []
+        input_labels = []
+        input_group_items = []
+        
+        with gr.Accordion("MCP Inputs", open=True):
+            for i in range(10):
+                # Create inputs that can be shown/hidden
+                txt = gr.Textbox(label=f"Input {i+1}", visible=False)
+                input_fields.append(txt)
+                input_group_items.append(txt)
+        
+        output_text = gr.Textbox(label="Output", interactive=False)
+        
+        with gr.Row():
+            submit_btn = gr.Button("Submit")
+            refresh_btn = gr.Button("Refresh Inputs")
 
-        async def process_message(message):
-            global history, assistant_queue
-            history.append({"role": "user", "content": message})
-            print(f"[USER] {message!r}")
-            yield "", history
+        def refresh_inputs():
+            global latest_blockly_code
+            
+            # Parse the Python code to extract function parameters
+            import re
+            
+            # Look for the create_mcp function definition
+            pattern = r'def create_mcp\((.*?)\):'
+            match = re.search(pattern, latest_blockly_code)
+            
+            params = []
+            if match:
+                params_str = match.group(1)
+                if params_str.strip():
+                    # Parse parameters to extract names and types
+                    for param in params_str.split(','):
+                        param = param.strip()
+                        if ':' in param:
+                            name, type_hint = param.split(':')
+                            params.append({
+                                'name': name.strip(),
+                                'type': type_hint.strip()
+                            })
+                        else:
+                            params.append({
+                                'name': param,
+                                'type': 'str'
+                            })
+            
+            # Generate visibility and label updates for each input field
+            updates = []
+            for i, field in enumerate(input_fields):
+                if i < len(params):
+                    # Show this field and update its label
+                    param = params[i]
+                    updates.append(gr.update(
+                        visible=True,
+                        label=f"{param['name']} ({param['type']})"
+                    ))
+                else:
+                    # Hide this field
+                    updates.append(gr.update(visible=False))
+            
+            return updates
 
-            while not assistant_queue.empty():
-                assistant_queue.get_nowait()
+        def process_input(*args):
+            # Get the input values from Gradio fields
+            return execute_blockly_logic(args)
 
-            run_blockly_thread(message)
-
-            while True:
-                try:
-                    reply_text = await asyncio.wait_for(assistant_queue.get(), timeout=2)
-                    print(f"[ASSISTANT STREAM] {reply_text!r}")
-                    yield "", history
-                except asyncio.TimeoutError:
-                    break
-
-        msg.submit(process_message, [msg], [msg, chatbot], queue=True)
-        clear_btn = gr.Button("Reset chat")
-        clear_btn.click(lambda: ([], ""), None, [chatbot, msg], queue=False)
+        # When refresh is clicked, update input field visibility and labels
+        refresh_btn.click(
+            refresh_inputs,
+            outputs=input_fields,
+            queue=False
+        )
+        
+        submit_btn.click(
+            process_input,
+            inputs=input_fields,
+            outputs=[output_text]
+        )
 
     return demo
 

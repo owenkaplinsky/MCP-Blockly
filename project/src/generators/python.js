@@ -2,30 +2,58 @@ import { Order } from 'blockly/python';
 
 export const forBlock = Object.create(null);
 
-// Generates a Python function that runs when the user sends a message
-forBlock['when_user_sends'] = function (block, generator) {
-  const body = generator.statementToCode(block, 'CODE') || "";
-  const code = `def on_user_send(user_message):\n${body}  return\n`;
-  return code;
-};
+forBlock['create_mcp'] = function (block, generator) {
+  // Get all inputs with their types
+  const typedInputs = [];
+  let i = 0;
+  while (block.getInput('X' + i)) {
+    const input = block.getInput('X' + i);
+    if (input && input.connection && input.connection.targetBlock()) {
+      // Get the actual parameter name from inputNames_ array
+      const paramName = (block.inputNames_ && block.inputNames_[i]) || ('arg' + i);
+      // Get the type from inputTypes_ array
+      const type = (block.inputTypes_ && block.inputTypes_[i]) || 'string';
+      // Convert type to Python type annotation
+      let pyType;
+      switch (type) {
+        case 'integer':
+          pyType = 'int';
+          break;
+        case 'string':
+          pyType = 'str';
+          break;
+        case 'list':
+          pyType = 'list';
+          break;
+        default:
+          pyType = 'Any';
+      }
+      typedInputs.push(`${paramName}: ${pyType}`);
+    }
+    i++;
+  }
 
-// Generates a Python 'return' statement for the assistant's reply
-forBlock['assistant_reply'] = function (block, generator) {
-  const reply = generator.valueToCode(block, 'INPUT', Order.NONE) || "''";
-  const code = `reply(${reply})\n`;
-  return code;
-};
+  // Get the code for blocks inside the BODY statement input
+  let body = generator.statementToCode(block, 'BODY');
 
-forBlock['get_assistant_response'] = function (block, generator) {
-  const model = block.getFieldValue('MODEL');
-  const prompt = generator.valueToCode(block, 'PROMPT', Order.NONE) || "''";
-  const history = block.getFieldValue('HISTORY');
+  // Get the return value if any
+  let returnValue = generator.valueToCode(block, 'RETURN', Order.ATOMIC);
 
-  const code = `get_assistant_response(${prompt}, model="${model}", use_history=${history})`;
-  return [code, Order.NONE];
-};
+  // Replace arg references with actual parameter names
+  if (returnValue && block.inputNames_) {
+    for (let j = 0; j < block.inputNames_.length; j++) {
+      const paramName = block.inputNames_[j];
+      returnValue = returnValue.replace(new RegExp(`arg${j}\\b`, 'g'), paramName);
+    }
+  }
 
-forBlock['user_message'] = function (block, generator) {
-  const code = `user_message`;
-  return [code, generator.ORDER_NONE];
+  let returnStatement = returnValue ? `  return ${returnValue}\n` : '  return\n';
+
+  // Create the function with all typed inputs
+  if (typedInputs.length > 0) {
+    const code = `def create_mcp(${typedInputs.join(', ')}):\n${body}${returnStatement}\n`;
+    return code;
+  } else {
+    return `def create_mcp():\n${body}${returnStatement}`;
+  }
 };

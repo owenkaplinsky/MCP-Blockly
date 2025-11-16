@@ -9,45 +9,7 @@ export const toolbox = {
     {
       'kind': 'sep',
     },
-    {
-      kind: 'category',
-      name: 'Custom',
-      categorystyle: 'logic_category',
-      contents: [
-        {
-          kind: 'block',
-          type: 'when_user_sends',
-          inputs: {
-            DUPLICATE: {
-              block: {
-                kind: "block",
-                type: "user_message"
-              }
-            },
-          },
-        },
-        {
-          kind: 'block',
-          type: 'assistant_reply',
-        },
-        {
-          kind: 'block',
-          type: 'get_assistant_response',
-          inputs: {
-            PROMPT: {
-              shadow: {
-                kind: "block",
-                type: "user_message"
-              }
-            },
-          },
-        },
-        {
-          kind: 'block',
-          type: 'user_message',
-        },
-      ]
-    },
+
     {
       kind: 'category',
       name: 'Logic',

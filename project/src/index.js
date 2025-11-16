@@ -57,29 +57,8 @@ const updateCode = () => {
   let code = pythonGenerator.workspaceToCode(ws);
   const codeEl = document.querySelector('#generatedCode code');
 
-  const response = `def get_assistant_response(prompt, model, use_history=True):
-  global history
-  from openai import OpenAI
-  import os
-
-  client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-  if use_history:
-      messages = history + [{"role": "user", "content": prompt}]
-  else:
-      messages = [{"role": "user", "content": prompt}]
-
-  completion = client.chat.completions.create(model=model, messages=messages)
-  return completion.choices[0].message.content.strip()
-  
-`;
-
   const blocks = ws.getAllBlocks(false);
-  const hasResponse = blocks.some(block => block.type === 'assistant_reply');
-
-  if (hasResponse) {
-    code = response + code;
-  }
+  const hasBlock = blocks.some(block => block.type === 'block');
 
   if (codeEl) {
     codeEl.textContent = code;
@@ -105,6 +84,21 @@ try {
   console.warn('Workspace load failed, clearing storage:', e);
   localStorage.clear();
 }
+
+// Ensure there's always one MCP block in the workspace
+const existingMcpBlocks = ws.getBlocksByType('create_mcp');
+if (existingMcpBlocks.length === 0) {
+  // Create the MCP block
+  const mcpBlock = ws.newBlock('create_mcp');
+  mcpBlock.initSvg();
+  mcpBlock.setDeletable(false);
+  mcpBlock.setMovable(true);  // Allow moving but not deleting
+
+  // Position it in a reasonable spot
+  mcpBlock.moveBy(50, 50);
+  mcpBlock.render();
+}
+
 updateCode();
 
 ws.addChangeListener((e) => {
@@ -124,23 +118,35 @@ ws.addChangeListener((event) => {
       if (
         removedBlock &&
         oldParent &&
-        removedBlock.type === 'user_message' &&
-        oldParent.type === 'when_user_sends'
+        removedBlock.type.startsWith('input_reference_') &&
+        oldParent.type === 'create_mcp'
       ) {
-        console.log('[DISCONNECT] user_message removed from when_user_sends');
+        // Only duplicate if removed from a mutator input (X0, X1, X2, etc.)
+        // NOT from other inputs like RETURN, BODY, or title input
+        const inputName = event.oldInputName;
+        const isMutatorInput = inputName && /^X\d+$/.test(inputName);
 
-        if (event.oldInputName) {
+        if (isMutatorInput) {
           Blockly.Events.disable();
           try {
-            const newMsgBlock = ws.newBlock('user_message');
-            newMsgBlock.initSvg();
-            newMsgBlock.render();
+            // Create a new block of the same reference type
+            const newRefBlock = ws.newBlock(removedBlock.type);
+            newRefBlock.initSvg();
+            newRefBlock.setDeletable(false);  // This one stays in the MCP block
 
-            const input = oldParent.getInput(event.oldInputName);
+            const input = oldParent.getInput(inputName);
             if (input) {
-              input.connection.connect(newMsgBlock.outputConnection);
-              console.log('[REPLACE] user_message restored instantly (no blink)');
+              input.connection.connect(newRefBlock.outputConnection);
             }
+
+            // Update the parent block's reference tracking
+            const varName = removedBlock.type.replace('input_reference_', '');
+            if (oldParent.inputRefBlocks_) {
+              oldParent.inputRefBlocks_.set(varName, newRefBlock);
+            }
+
+            // Make the dragged-out block deletable
+            removedBlock.setDeletable(true);
 
             ws.render(); // ensure workspace updates immediately
           } finally {
@@ -160,22 +166,3 @@ ws.addChangeListener((e) => {
   }
   updateCode();
 });
-
-window.addEventListener("message", (event) => {
-  if (event.data?.type === "user_message") {
-    handleUserMessage(event.data.text);
-  }
-});
-
-function handleUserMessage(message) {
-  const blocks = ws.getAllBlocks();
-  const msgBlock = blocks.find(b => b.type === 'user_message');
-  if (msgBlock) {
-    msgBlock.setFieldValue(message, 'TEXT');
-    console.log(`[Blockly] Updated user_message with: ${message}`);
-  }
-
-  if (typeof window.userSendHandler === "function") {
-    window.userSendHandler(message);
-  }
-}
