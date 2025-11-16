@@ -9,7 +9,24 @@ export const toolbox = {
     {
       'kind': 'sep',
     },
-
+    {
+      kind: 'category',
+      name: 'Custom',
+      categorystyle: 'logic_category',
+      contents: [
+        {
+          kind: 'block',
+          type: 'llm_call',
+        },
+        {
+          kind: 'block',
+          type: 'tool_def',
+        },
+      ]
+    },
+    {
+      'kind': 'sep',
+    },
     {
       kind: 'category',
       name: 'Logic',
@@ -533,7 +550,7 @@ export const toolbox = {
     },
     {
       kind: 'category',
-      name: 'Tools',
+      name: 'Functions',
       categorystyle: 'procedure_category',
       custom: 'PROCEDURE',
     },

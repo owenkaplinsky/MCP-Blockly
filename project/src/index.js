@@ -57,8 +57,26 @@ const updateCode = () => {
   let code = pythonGenerator.workspaceToCode(ws);
   const codeEl = document.querySelector('#generatedCode code');
 
+  const call = `def llm_call(prompt, model):
+  global history
+  from openai import OpenAI
+  import os
+
+  client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+  messages = [{"role": "user", "content": prompt}]
+
+  completion = client.chat.completions.create(model=model, messages=messages)
+  return completion.choices[0].message.content.strip()
+  
+`;
+
   const blocks = ws.getAllBlocks(false);
-  const hasBlock = blocks.some(block => block.type === 'block');
+  const hasCall = blocks.some(block => block.type === 'llm_call');
+
+  if (hasCall) {
+    code = call + code;
+  }
 
   if (codeEl) {
     codeEl.textContent = code;
@@ -118,8 +136,7 @@ ws.addChangeListener((event) => {
       if (
         removedBlock &&
         oldParent &&
-        removedBlock.type.startsWith('input_reference_') &&
-        oldParent.type === 'create_mcp'
+        (removedBlock.type.startsWith('input_reference_') && (oldParent.type === 'create_mcp' || oldParent.type === 'tool_def'))
       ) {
         // Only duplicate if removed from a mutator input (X0, X1, X2, etc.)
         // NOT from other inputs like RETURN, BODY, or title input
@@ -133,6 +150,8 @@ ws.addChangeListener((event) => {
             const newRefBlock = ws.newBlock(removedBlock.type);
             newRefBlock.initSvg();
             newRefBlock.setDeletable(false);  // This one stays in the MCP block
+            // Mark the new reference block with its owner (same as the parent)
+            newRefBlock._ownerBlockId = oldParent.id;
 
             const input = oldParent.getInput(inputName);
             if (input) {
@@ -140,9 +159,11 @@ ws.addChangeListener((event) => {
             }
 
             // Update the parent block's reference tracking
-            const varName = removedBlock.type.replace('input_reference_', '');
-            if (oldParent.inputRefBlocks_) {
-              oldParent.inputRefBlocks_.set(varName, newRefBlock);
+            if (removedBlock.type.startsWith('input_reference_')) {
+              const varName = removedBlock.type.replace('input_reference_', '');
+              if (oldParent.inputRefBlocks_) {
+                oldParent.inputRefBlocks_.set(varName, newRefBlock);
+              }
             }
 
             // Make the dragged-out block deletable

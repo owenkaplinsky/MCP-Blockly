@@ -1,80 +1,73 @@
 import * as Blockly from 'blockly/core';
 import { pythonGenerator } from 'blockly/python';
 
-// Function to create a unique block type for an input
+// Utility to create a unique input reference block type
 function createInputRefBlockType(inputName) {
   const blockType = `input_reference_${inputName}`;
-
-  // Only create if not already defined
   if (!Blockly.Blocks[blockType]) {
-    // Define block
     Blockly.Blocks[blockType] = {
       init: function () {
         this.jsonInit({
-          "type": blockType,
-          "message0": "%1",
-          "args0": [
+          type: blockType,
+          message0: "%1",
+          args0: [
             {
-              "type": "field_label_serializable",
-              "name": "VARNAME",
-              "text": inputName
+              type: "field_label_serializable",
+              name: "VARNAME",
+              text: inputName
             }
           ],
-          "output": null,
-          "colour": 210,
-          "outputShape": 1  // Oval shape (1 = round)
+          output: null,
+          colour: 210,
+          outputShape: 2
         });
       }
     };
-
-    // Define Python generator for this block type
-    pythonGenerator.forBlock[blockType] = function (block) {
-      // Just return the input name as a variable reference
+    pythonGenerator.forBlock[blockType] = function () {
       return [inputName, pythonGenerator.ORDER_ATOMIC];
     };
   }
   return blockType;
 }
 
-// Keep track of input reference blocks
-const inputRefs = new Map();  // Maps input name to block ID
+// Global input reference tracking map
+const inputRefs = new Map();
 
+// Core mutator registration for dynamic tool and input creation
 Blockly.Extensions.registerMutator(
   'test_mutator',
   {
-    // Initialize tracking of input reference blocks
     initialize: function () {
       if (!this.initialized_) {
         this.inputCount_ = 0;
         this.inputNames_ = [];
         this.inputTypes_ = [];
-        this.inputRefBlocks_ = new Map();  // Maps input name to block reference
+        this.inputRefBlocks_ = new Map();
         this.initialized_ = true;
+        // Mark all reference blocks with their owner for later identification
+        this._ownerBlockId = this.id;
       }
     },
 
     decompose: function (workspace) {
-      var containerBlock = workspace.newBlock('container');
+      const containerBlock = workspace.newBlock('container');
       containerBlock.initSvg();
-      var connection = containerBlock.getInput('STACK').connection;
+      let connection = containerBlock.getInput('STACK').connection;
 
-      // Ensure inputCount_ is defined
       this.inputCount_ = this.inputCount_ || 0;
       this.inputNames_ = this.inputNames_ || [];
       this.inputTypes_ = this.inputTypes_ || [];
 
-      // Dynamically add input blocks based on inputCount_
-      for (var i = 0; i < this.inputCount_; i++) {
-        var itemBlock = workspace.newBlock('container_input');
+      // Restore dynamically added input items
+      for (let i = 0; i < this.inputCount_; i++) {
+        const itemBlock = workspace.newBlock('container_input');
         itemBlock.initSvg();
+        const typeVal = this.inputTypes_[i] || 'string';
+        const nameVal = this.inputNames_[i] || typeVal;
+        itemBlock.setFieldValue(typeVal, 'TYPE');
+        itemBlock.setFieldValue(nameVal, 'NAME');
 
-        var typeVal = this.inputTypes_[i] || 'string';
-        var nameVal = this.inputNames_[i] || typeVal;
-        itemBlock.setFieldValue(typeVal, 'TYPE');  // Set data type
-        itemBlock.setFieldValue(nameVal, 'NAME');  // Set name from stored name
-
-        // Preserve any existing connection from this block's input
-        var input = this.getInput('X' + i);
+        const input = this.getInput('X' + i);
         if (input && input.connection && input.connection.targetConnection) {
           itemBlock.valueConnection_ = input.connection.targetConnection;
         }
@@ -87,55 +80,49 @@ Blockly.Extensions.registerMutator(
     },
 
     compose: function (containerBlock) {
-      // Disable events during mutator updates to prevent duplication
       Blockly.Events.disable();
-
       try {
-        // Ensure initialization
-        if (!this.initialized_) {
-          this.initialize();
-        }
+        if (!this.initialized_) this.initialize();
 
-        var itemBlock = containerBlock.getInputTargetBlock('STACK');
-        var connections = [];
-        var oldNames = this.inputNames_ ? [...this.inputNames_] : [];  // Copy old names for cleanup
+        const oldNames = [...(this.inputNames_ || [])];
+        const connections = [];
+        let itemBlock = containerBlock.getInputTargetBlock('STACK');
 
-        // Collect input connections
+        // Collect all child connections from mutator stack
         while (itemBlock) {
           connections.push(itemBlock.valueConnection_);
           itemBlock = itemBlock.nextConnection && itemBlock.nextConnection.targetBlock();
         }
 
-        var newCount = connections.length;
+        const newCount = connections.length;
         this.inputCount_ = newCount;
         this.inputNames_ = this.inputNames_ || [];
         this.inputTypes_ = this.inputTypes_ || [];
 
-        var idx = 0;
-        var it = containerBlock.getInputTargetBlock('STACK');
-        var newNames = [];
+        // Rebuild the new list of input names and types
+        let idx = 0;
+        let it = containerBlock.getInputTargetBlock('STACK');
+        const newNames = [];
         while (it) {
           this.inputTypes_[idx] = it.getFieldValue('TYPE') || 'string';
-          this.inputNames_[idx] = it.getFieldValue('NAME') || ('arg' + idx);
+          this.inputNames_[idx] = it.getFieldValue('NAME') || 'arg' + idx;
           newNames.push(this.inputNames_[idx]);
           it = it.nextConnection && it.nextConnection.targetBlock();
           idx++;
         }
 
-        // Clean up removed input reference blocks only if count decreased
+        // Dispose of removed input reference blocks when inputs shrink
         if (newCount < oldNames.length) {
-          // Only remove blocks for inputs that were deleted (beyond new count)
           for (let i = newCount; i < oldNames.length; i++) {
             const oldName = oldNames[i];
             const block = this.inputRefBlocks_.get(oldName);
-            if (block && !block.disposed) {
-              block.dispose(true);  // true = skip gap
-            }
+            if (block && !block.disposed) block.dispose(true);
             this.inputRefBlocks_.delete(oldName);
           }
         }
 
-        // Handle renamed variables - update ALL instances (main block + clones)
+        // Rename reference blocks when variable names change
+        // Only update reference blocks that belong to THIS block
         for (let i = 0; i < Math.min(oldNames.length, newNames.length); i++) {
           const oldName = oldNames[i];
           const newName = newNames[i];
@@ -143,227 +130,278 @@ Blockly.Extensions.registerMutator(
             const oldBlockType = `input_reference_${oldName}`;
             const newBlockType = `input_reference_${newName}`;
 
-            // Update the reference block in the MCP block
             if (this.inputRefBlocks_.has(oldName)) {
               const refBlock = this.inputRefBlocks_.get(oldName);
               if (refBlock && !refBlock.disposed) {
                 this.inputRefBlocks_.delete(oldName);
                 this.inputRefBlocks_.set(newName, refBlock);
                 refBlock.setFieldValue(newName, 'VARNAME');
-                refBlock.type = newBlockType;  // Update the block type
+                // Properly update the block type in workspace tracking
+                if (refBlock.workspace && refBlock.workspace.removeTypedBlock) {
+                  refBlock.workspace.removeTypedBlock(refBlock);
+                  refBlock.type = newBlockType;
+                  refBlock.workspace.addTypedBlock(refBlock);
+                } else {
+                  refBlock.type = newBlockType;
+                }
               }
             }
 
-            // Find and update ALL clones of this reference block in the workspace
-            const workspace = this.workspace;
-            const allBlocks = workspace.getAllBlocks(false);
-            for (const block of allBlocks) {
-              if (block.type === oldBlockType && block !== this.inputRefBlocks_.get(newName)) {
-                // This is a clone - update it too
-                block.type = newBlockType;
-                block.setFieldValue(newName, 'VARNAME');
+            // Update all clones of this reference block that share the same owner
+            // (i.e., all clones that were created from the same parent block)
+            const refBlock = this.inputRefBlocks_.get(newName);
+            const ownerBlockId = this.id;
+
+            if (refBlock && !refBlock.disposed) {
+              const allBlocks = this.workspace.getAllBlocks(false);
+              for (const block of allBlocks) {
+                if (block.type === oldBlockType) {
+                  // Update if this block has the same owner as our reference block
+                  // This includes both connected and cloned blocks
+                  if (block._ownerBlockId === ownerBlockId) {
+                    // Properly update the block type in workspace tracking
+                    if (block.workspace && block.workspace.removeTypedBlock) {
+                      block.workspace.removeTypedBlock(block);
+                      block.type = newBlockType;
+                      block.workspace.addTypedBlock(block);
+                    } else {
+                      block.type = newBlockType;
+                    }
+                    block.setFieldValue(newName, 'VARNAME');
+                  }
+                }
               }
             }
 
-            // Update the Python generator for the new block type
-            pythonGenerator.forBlock[newBlockType] = function (block) {
+            pythonGenerator.forBlock[newBlockType] = function () {
               return [newName, pythonGenerator.ORDER_ATOMIC];
             };
           }
         }
 
-        // Remove only the dynamic inputs (X0, X1, etc.)
-        var i = 0;
-        while (this.getInput('X' + i)) {
-          this.removeInput('X' + i);
-          i++;
+        // Remove all dynamic and temporary inputs before reconstruction
+        let i = 0;
+        while (this.getInput('X' + i)) this.removeInput('X' + i++);
+        let t = 0;
+        while (this.getInput('T' + t)) this.removeInput('T' + t++);
+        ['INPUTS_TEXT', 'TOOLS_TEXT'].forEach(name => {
+          if (this.getInput(name)) this.removeInput(name);
+        });
+
+        if (newCount > 0) {
+          const inputsText = this.appendDummyInput('INPUTS_TEXT');
+          inputsText.appendField('with inputs:');
+          this.moveInputBefore('INPUTS_TEXT', 'BODY');
         }
 
-        // Now add dynamic inputs at the correct position
-        for (var j = 0; j < newCount; j++) {
-          var type = this.inputTypes_[j] || 'string';
-          var name = this.inputNames_[j] || type;
-          var check = null;
+        // Add each dynamic input, reconnecting to reference blocks
+        for (let j = 0; j < newCount; j++) {
+          const type = this.inputTypes_[j] || 'string';
+          const name = this.inputNames_[j] || type;
+          let check = null;
           if (type === 'integer') check = 'Number';
           if (type === 'string') check = 'String';
-          // For list, leave check as null (no restriction)
 
-          // Get existing reference block if any
           const existingRefBlock = this.inputRefBlocks_.get(name);
-
-          // Insert inputs at the beginning (after the static text)
-          var input = this.appendValueInput('X' + j);
+          const input = this.appendValueInput('X' + j);
           if (check) input.setCheck(check);
-          input.appendField(type);  // Display the type instead of the name
-
-          // Move the input to the correct position (after dummy inputs, before BODY)
+          input.appendField(type);
           this.moveInputBefore('X' + j, 'BODY');
 
-          // Create or reuse reference block
           const blockType = createInputRefBlockType(name);
           if (!existingRefBlock) {
-            // Create new reference block
-            const workspace = this.workspace;
-            const refBlock = workspace.newBlock(blockType);
+            const refBlock = this.workspace.newBlock(blockType);
             refBlock.initSvg();
-            refBlock.setDeletable(false);  // Can't be deleted directly
+            refBlock.setDeletable(false);
             refBlock.render();
+            // Mark the reference block with its owner
+            refBlock._ownerBlockId = this.id;
             this.inputRefBlocks_.set(name, refBlock);
-
-            // Connect new block
-            if (input && input.connection && refBlock.outputConnection) {
+            if (input.connection && refBlock.outputConnection) {
               input.connection.connect(refBlock.outputConnection);
             }
-          } else {
-            // Reuse existing block - connect it to new input
-            if (input && input.connection && existingRefBlock.outputConnection) {
-              input.connection.connect(existingRefBlock.outputConnection);
-            }
-
-            // Update the Python generator for renamed variables
-            pythonGenerator.forBlock[blockType] = function (block) {
-              return [name, pythonGenerator.ORDER_ATOMIC];
-            };
+          } else if (input.connection && existingRefBlock.outputConnection) {
+            input.connection.connect(existingRefBlock.outputConnection);
           }
+
+          pythonGenerator.forBlock[blockType] = function () {
+            return [name, pythonGenerator.ORDER_ATOMIC];
+          };
         }
 
-        // Reconnect preserved connections
-        for (var k = 0; k < newCount; k++) {
-          var conn = connections[k];
+        // Reconnect preserved connections to new structure
+        for (let k = 0; k < newCount; k++) {
+          const conn = connections[k];
           if (conn) {
             try {
               conn.connect(this.getInput('X' + k).connection);
-            } catch (e) {
-              // ignore failed reconnects
-            }
+            } catch { }
           }
         }
 
-        // Force workspace to update
         this.workspace.render();
-
       } finally {
-        // Re-enable events
         Blockly.Events.enable();
       }
     },
 
     saveExtraState: function () {
-      const state = {
+      return {
         inputCount: this.inputCount_,
         inputNames: this.inputNames_,
-        inputTypes: this.inputTypes_
+        inputTypes: this.inputTypes_,
+        toolCount: this.toolCount_ || 0
       };
-      return state;
     },
 
     loadExtraState: function (state) {
-      this.inputCount_ = state['inputCount'];
-      this.inputNames_ = state['inputNames'] || [];
-      this.inputTypes_ = state['inputTypes'] || [];
+      this.inputCount_ = state.inputCount;
+      this.inputNames_ = state.inputNames || [];
+      this.inputTypes_ = state.inputTypes || [];
+      this.toolCount_ = state.toolCount || 0;
     }
   },
-  null,  // No helper function needed
+  null,
   ['container_input']
 );
 
-// Define the test block with mutator
-const create_mcp = {
-  "type": "create_mcp",
-  "message0": "create MCP with inputs: %1 %2 and return %3",
-  "args0": [
-    {
-      "type": "input_dummy"
-    },
-    {
-      "type": "input_statement",
-      "name": "BODY"
-    },
-    {
-      "type": "input_value",
-      "name": "RETURN",
-    },
+// Base block definitions
+const container = {
+  type: "container",
+  message0: "inputs %1 %2",
+  args0: [
+    { type: "input_dummy", name: "title" },
+    { type: "input_statement", name: "STACK" },
   ],
-  "colour": 160,
-  "inputsInline": true,
-  "mutator": "test_mutator",
-  "inputCount_": 0,  // Start with no inputs
-  "deletable": false,  // Make the block non-deletable
-
-  // Override the dispose function to clean up reference blocks
-  "extensions": ["test_cleanup_extension"]
+  colour: 160,
+  inputsInline: false
 };
 
-// Define the container block for the mutator
-const container = {
-  "type": "container",
-  "message0": "inputs %1 %2",
-  "args0": [
-    {
-      "type": "input_dummy",
-      "name": "title"
-    },
-    {
-      "type": "input_statement",
-      "name": "STACK"
-    }
-  ],
-  "colour": 160,
-  "inputsInline": false
-}
-
-
-// Define the input block for the mutator
 const container_input = {
-  type: 'container_input',
-  message0: '%1 %2',
+  type: "container_input",
+  message0: "input %1 %2",
   args0: [
     {
-      type: 'field_dropdown',
-      name: 'TYPE',
+      type: "field_dropdown",
+      name: "TYPE",
       options: [
         ["String", "string"],
         ["Integer", "integer"],
         ["List", "list"],
       ]
     },
-    {
-      type: 'field_input',
-      name: 'NAME',
-    },
+    { type: "field_input", name: "NAME" },
   ],
   previousStatement: null,
   nextStatement: null,
   colour: 210,
 };
 
-// Register an extension to handle cleanup when the block is deleted
-Blockly.Extensions.register('test_cleanup_extension', function () {
-  // Store the original dispose function
-  const oldDispose = this.dispose;
+const llm_call = {
+  type: "llm_call",
+  message0: "call model %1 with prompt %2",
+  args0: [
+    {
+      type: "field_dropdown",
+      name: "MODEL",
+      options: [
+        ["gpt-3.5-turbo", "gpt-3.5-turbo-0125"],
+        ["gpt-5-mini", "gpt-5-mini-2025-08-07"],
+      ]
+    },
+    { type: "input_value", name: "PROMPT", check: "String" },
+  ],
+  inputsInline: true,
+  output: "String",
+  colour: 230,
+  tooltip: "Call the selected OpenAI model to get a response.",
+  helpUrl: "",
+};
 
-  // Override the dispose function
+const create_mcp = {
+  type: "create_mcp",
+  message0: "create MCP %1 %2 and return %3",
+  args0: [
+    { type: "input_dummy" },
+    { type: "input_statement", name: "BODY" },
+    { type: "input_value", name: "RETURN" },
+  ],
+  colour: 160,
+  inputsInline: true,
+  mutator: "test_mutator",
+  inputCount_: 0,
+  deletable: false,
+  extensions: ["test_cleanup_extension"]
+};
+
+const tool_def = {
+  type: "tool_def",
+  message0: "function %1 %2 %3 and return %4",
+  args0: [
+    { type: "field_input", name: "NAME", text: "newFunction" },
+    { type: "input_dummy" },
+    { type: "input_statement", name: "BODY" },
+    { type: "input_value", name: "RETURN" },
+  ],
+  colour: 160,
+  inputsInline: true,
+  mutator: "test_mutator",
+  inputCount_: 0,
+  deletable: true,
+  extensions: ["test_cleanup_extension"]
+};
+
+// Cleanup extension ensures that dynamic reference blocks are deleted when parent is
+Blockly.Extensions.register('test_cleanup_extension', function () {
+  const oldDispose = this.dispose;
   this.dispose = function (healStack, recursive) {
-    // Clean up all reference blocks first
     if (this.inputRefBlocks_) {
-      for (const [name, refBlock] of this.inputRefBlocks_) {
-        if (refBlock && !refBlock.disposed) {
-          refBlock.dispose(false);  // Don't heal stack for reference blocks
-        }
+      for (const [, refBlock] of this.inputRefBlocks_) {
+        if (refBlock && !refBlock.disposed) refBlock.dispose(false);
       }
       this.inputRefBlocks_.clear();
     }
-
-    // Call the original dispose function
-    if (oldDispose) {
-      oldDispose.call(this, healStack, recursive);
-    }
+    if (oldDispose) oldDispose.call(this, healStack, recursive);
   };
 });
 
-// Create block definitions from the JSON
+// Function to generate a unique tool name
+function generateUniqueToolName(workspace, excludeBlock) {
+  const existingNames = new Set();
+  const allBlocks = workspace.getAllBlocks(false);
+
+  // Collect all existing tool names, excluding the block being created
+  for (const block of allBlocks) {
+    if (block.type === 'tool_def' && block !== excludeBlock && block.getFieldValue('NAME')) {
+      existingNames.add(block.getFieldValue('NAME'));
+    }
+  }
+
+  // Generate a unique name
+  let baseName = 'newTool';
+  let name = baseName;
+  let counter = 1;
+
+  while (existingNames.has(name)) {
+    counter++;
+    name = `${baseName}${counter}`;
+  }
+
+  return name;
+}
+
+// Register tool_def block separately to include custom init logic
+Blockly.Blocks['tool_def'] = {
+  init: function () {
+    this.jsonInit(tool_def);
+    // Apply extensions
+    Blockly.Extensions.apply('test_cleanup_extension', this, false);
+  }
+};
+
 export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   create_mcp,
   container,
   container_input,
+  llm_call,
 ]);
