@@ -136,7 +136,7 @@ demo.launch(mcp_server=True)
   return code;
 };
 
-forBlock['tool_def'] = function (block, generator) {
+forBlock['func_def'] = function (block, generator) {
   const name = block.getFieldValue('NAME');
   const typedInputs = [];
   let i = 0;

@@ -49,6 +49,17 @@ const ws = Blockly.inject(blocklyDiv, {
     colour: '#ccc',
     snap: false
   },
+  disable: false,
+  collapse: false,
+  zoom: {
+    controls: true,
+    wheel: true,
+    startScale: 1.0,
+    maxScale: 3,
+    minScale: 0.3,
+    scaleSpeed: 1.2,
+    pinch: true
+  },
   renderer: 'zelos',
   theme: myTheme,
 });
@@ -58,7 +69,6 @@ const updateCode = () => {
   const codeEl = document.querySelector('#generatedCode code');
 
   const call = `def llm_call(prompt, model):
-  global history
   from openai import OpenAI
   import os
 
@@ -138,7 +148,7 @@ ws.addChangeListener((event) => {
       if (
         removedBlock &&
         oldParent &&
-        (removedBlock.type.startsWith('input_reference_') && (oldParent.type === 'create_mcp' || oldParent.type === 'tool_def'))
+        (removedBlock.type.startsWith('input_reference_') && (oldParent.type === 'create_mcp' || oldParent.type === 'func_def'))
       ) {
         // Only duplicate if removed from a mutator input (X0, X1, X2, etc.)
         // NOT from other inputs like RETURN, BODY, or title input

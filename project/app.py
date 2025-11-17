@@ -36,44 +36,52 @@ def execute_blockly_logic(user_inputs):
 
     result = ""
 
-    code_lines = latest_blockly_code.splitlines()
-
-    cleaned_lines = []
-    skip = False
-    for line in code_lines:
-        stripped = line.strip()
-
-        # When we reach the Interface block, start skipping until after demo.launch()
-        if stripped.startswith("demo = gr.Interface("):
-            skip = True
+    # More comprehensive filtering of Gradio-related code
+    lines = latest_blockly_code.split('\n')
+    filtered_lines = []
+    skip_mode = False
+    in_demo_block = False
+    
+    for line in lines:
+        # Skip import gradio line
+        if 'import gradio' in line:
             continue
-        if skip:
-            # Stop skipping after demo.launch(...) line
-            if stripped.startswith("demo.launch("):
-                skip = False
+            
+        # Skip Gradio interface creation and any demo-related lines
+        if 'demo = gr.Interface' in line:
+            in_demo_block = True
+            skip_mode = True
             continue
-
-        # Keep everything else
-        cleaned_lines.append(line)
-
-    # Remove trailing blank lines
-    while cleaned_lines and not cleaned_lines[-1].strip():
-        cleaned_lines.pop()
-
-    code_to_run = "\n".join(cleaned_lines)
-
-    if len(code_lines) > 7:
-        code_to_run = "\n".join(code_lines[:-7])
-    else:
-        code_to_run = "\n".join(code_lines)
+        elif 'demo.launch' in line:
+            skip_mode = False
+            in_demo_block = False
+            continue
+        elif in_demo_block:
+            # Skip everything in the demo block (multi-line Interface declaration)
+            continue
+            
+        # Skip any standalone gr. calls
+        if 'gr.' in line:
+            continue
+        
+        if not skip_mode:
+            filtered_lines.append(line)
+    
+    code_to_run = '\n'.join(filtered_lines)
 
     def capture_result(msg):
         nonlocal result
         result = msg
 
-    env = {"reply": capture_result}
+    # Set up the environment with necessary imports that might be needed
+    env = {
+        "reply": capture_result,
+        "__builtins__": __builtins__,
+    }
 
     try:
+        # Import any required modules in the execution environment
+        exec("import os", env)
         exec(code_to_run, env)
         if "create_mcp" in env:
             import inspect
@@ -141,7 +149,7 @@ def build_interface():
         
         with gr.Row():
             submit_btn = gr.Button("Submit")
-            refresh_btn = gr.Button("Refresh Inputs")
+            refresh_btn = gr.Button("Refresh")
 
         def refresh_inputs():
             global latest_blockly_code

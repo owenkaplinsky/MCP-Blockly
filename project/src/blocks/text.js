@@ -452,8 +452,8 @@ const create_mcp = {
   extensions: ["test_cleanup_extension"]
 };
 
-const tool_def = {
-  type: "tool_def",
+const func_def = {
+  type: "func_def",
   message0: "function %1 %2 %3",
   args0: [
     { type: "field_input", name: "NAME", text: "newFunction" },
@@ -489,7 +489,7 @@ function generateUniqueToolName(workspace, excludeBlock) {
 
   // Collect all existing tool names, excluding the block being created
   for (const block of allBlocks) {
-    if (block.type === 'tool_def' && block !== excludeBlock && block.getFieldValue('NAME')) {
+    if (block.type === 'func_def' && block !== excludeBlock && block.getFieldValue('NAME')) {
       existingNames.add(block.getFieldValue('NAME'));
     }
   }
@@ -520,10 +520,10 @@ Blockly.Blocks['create_mcp'] = {
   }
 };
 
-// Register tool_def block separately to include custom init logic
-Blockly.Blocks['tool_def'] = {
+// Register func_def block separately to include custom init logic
+Blockly.Blocks['func_def'] = {
   init: function () {
-    this.jsonInit(tool_def);
+    this.jsonInit(func_def);
     // Apply extensions
     Blockly.Extensions.apply('test_cleanup_extension', this, false);
     // Initialize mutator state

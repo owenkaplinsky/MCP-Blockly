@@ -11,16 +11,31 @@ export const toolbox = {
     },
     {
       kind: 'category',
-      name: 'Custom',
+      name: 'AI',
       categorystyle: 'logic_category',
       contents: [
+        {
+          "kind": "label",
+          "text": "Text"
+        },
         {
           kind: 'block',
           type: 'llm_call',
         },
         {
+          "kind": "label",
+          "text": "Image"
+        },
+      ]
+    },
+    {
+      kind: 'category',
+      name: 'Functions',
+      categorystyle: 'logic_category',
+      contents: [
+        {
           kind: 'block',
-          type: 'tool_def',
+          type: 'func_def',
         },
       ]
     },
