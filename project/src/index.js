@@ -78,6 +78,8 @@ const updateCode = () => {
     code = call + code;
   }
 
+  code = "import gradio as gr\n\n" + code
+
   if (codeEl) {
     codeEl.textContent = code;
   }

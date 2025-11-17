@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import uvicorn
+import re
 from dotenv import load_dotenv
 
 app = FastAPI()
@@ -34,22 +35,78 @@ def execute_blockly_logic(user_inputs):
         return "No Blockly code available"
 
     result = ""
-    
+
+    code_lines = latest_blockly_code.splitlines()
+
+    cleaned_lines = []
+    skip = False
+    for line in code_lines:
+        stripped = line.strip()
+
+        # When we reach the Interface block, start skipping until after demo.launch()
+        if stripped.startswith("demo = gr.Interface("):
+            skip = True
+            continue
+        if skip:
+            # Stop skipping after demo.launch(...) line
+            if stripped.startswith("demo.launch("):
+                skip = False
+            continue
+
+        # Keep everything else
+        cleaned_lines.append(line)
+
+    # Remove trailing blank lines
+    while cleaned_lines and not cleaned_lines[-1].strip():
+        cleaned_lines.pop()
+
+    code_to_run = "\n".join(cleaned_lines)
+
+    if len(code_lines) > 7:
+        code_to_run = "\n".join(code_lines[:-7])
+    else:
+        code_to_run = "\n".join(code_lines)
+
     def capture_result(msg):
         nonlocal result
         result = msg
 
-    env = {
-        "reply": capture_result,
-    }
+    env = {"reply": capture_result}
 
     try:
-        exec(latest_blockly_code, env)
+        exec(code_to_run, env)
         if "create_mcp" in env:
-            # If create_mcp function exists, call it with the input arguments
-            # Filter out None values and convert to list for unpacking
-            args = [arg for arg in user_inputs if arg is not None]
-            result = env["create_mcp"](*args)
+            import inspect
+            sig = inspect.signature(env["create_mcp"])
+            params = list(sig.parameters.values())
+
+            typed_args = []
+            for i, arg in enumerate(user_inputs):
+                if i >= len(params):
+                    break
+                if arg is None or arg == "":
+                    typed_args.append(None)
+                    continue
+
+                anno = params[i].annotation
+                try:
+                    # Convert using the declared type hint
+                    if anno == int:
+                        typed_args.append(int(arg))
+                    elif anno == float:
+                        typed_args.append(float(arg))
+                    elif anno == bool:
+                        typed_args.append(str(arg).lower() in ("true", "1"))
+                    elif anno == str or anno == inspect._empty:
+                        typed_args.append(str(arg))
+                    else:
+                        # Unknown or complex type — leave as-is
+                        typed_args.append(arg)
+                except Exception:
+                    # If conversion fails, pass the raw input
+                    typed_args.append(arg)
+
+            result = env["create_mcp"](*typed_args)
         elif "process_input" in env:
             env["process_input"](user_inputs)
     except Exception as e:
@@ -74,8 +131,13 @@ def build_interface():
                 txt = gr.Textbox(label=f"Input {i+1}", visible=False)
                 input_fields.append(txt)
                 input_group_items.append(txt)
+
+        output_fields = []
         
-        output_text = gr.Textbox(label="Output", interactive=False)
+        with gr.Accordion("MCP Outputs", open=True):
+            for i in range(10):
+                out = gr.Textbox(label=f"Output {i+1}", visible=False, interactive=False)
+                output_fields.append(out)
         
         with gr.Row():
             submit_btn = gr.Button("Submit")
@@ -83,14 +145,12 @@ def build_interface():
 
         def refresh_inputs():
             global latest_blockly_code
-            
-            # Parse the Python code to extract function parameters
             import re
-            
+
             # Look for the create_mcp function definition
             pattern = r'def create_mcp\((.*?)\):'
             match = re.search(pattern, latest_blockly_code)
-            
+
             params = []
             if match:
                 params_str = match.group(1)
@@ -109,38 +169,54 @@ def build_interface():
                                 'name': param,
                                 'type': 'str'
                             })
-            
-            # Generate visibility and label updates for each input field
+
+            # Detect output count (out_amt = N)
+            out_amt_match = re.search(r'out_amt\s*=\s*(\d+)', latest_blockly_code)
+            out_amt = int(out_amt_match.group(1)) if out_amt_match else 0
+
+            # Update visibility + clear output fields
+            output_updates = []
+            for i, field in enumerate(output_fields):
+                if i < out_amt:
+                    output_updates.append(gr.update(visible=True, label=f"Output {i+1}", value=""))
+                else:
+                    output_updates.append(gr.update(visible=False, value=""))
+
+            # Update visibility + clear input fields
             updates = []
             for i, field in enumerate(input_fields):
                 if i < len(params):
-                    # Show this field and update its label
                     param = params[i]
                     updates.append(gr.update(
                         visible=True,
-                        label=f"{param['name']} ({param['type']})"
+                        label=f"{param['name']} ({param['type']})",
+                        value=""
                     ))
                 else:
-                    # Hide this field
-                    updates.append(gr.update(visible=False))
-            
-            return updates
+                    updates.append(gr.update(visible=False, value=""))
+
+            return updates + output_updates
 
         def process_input(*args):
-            # Get the input values from Gradio fields
-            return execute_blockly_logic(args)
+            result = execute_blockly_logic(args)
+
+            # If the result is a tuple or list, pad it to length 10
+            if isinstance(result, (tuple, list)):
+                return list(result) + [""] * (10 - len(result))
+            # If it's a single value, repeat it in the first slot and pad the rest
+            return [result] + [""] * 9
 
         # When refresh is clicked, update input field visibility and labels
         refresh_btn.click(
             refresh_inputs,
-            outputs=input_fields,
+            outputs=input_fields + output_fields,
             queue=False
         )
         
         submit_btn.click(
             process_input,
             inputs=input_fields,
-            outputs=[output_text]
+            outputs=output_fields
         )
 
     return demo

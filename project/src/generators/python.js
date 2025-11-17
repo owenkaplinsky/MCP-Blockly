@@ -32,43 +32,106 @@ forBlock['create_mcp'] = function (block, generator) {
     i++;
   }
 
-  // Gather any tool definitions connected to this block
-  let toolDefs = [];
-  let t = 0;
-  while (block.getInput('T' + t)) {
-    const toolCode = generator.valueToCode(block, 'T' + t, Order.NONE);
-    if (toolCode) {
-      toolDefs.push(toolCode);
-    }
-    t++;
-  }
-
-  // Main function body and return value
+  // Main function body and return value(s)
   let body = generator.statementToCode(block, 'BODY');
-  let returnValue = generator.valueToCode(block, 'RETURN', Order.ATOMIC);
+  let returnStatement = '';
 
-  // Replace placeholder args (arg0, arg1...) with actual names in return statement
-  if (returnValue && block.inputNames_) {
-    for (let j = 0; j < block.inputNames_.length; j++) {
-      const paramName = block.inputNames_[j];
-      returnValue = returnValue.replace(new RegExp(`arg${j}\\b`, 'g'), paramName);
+  const returnValues = [];
+
+  // Check if we have outputs defined and the R inputs exist
+  if (block.outputCount_ && block.outputCount_ > 0 && block.getInput('R0')) {
+    for (let r = 0; r < block.outputCount_; r++) {
+      let returnValue = generator.valueToCode(block, 'R' + r, Order.ATOMIC);
+
+      // Replace placeholder args with actual names
+      if (returnValue && block.inputNames_) {
+        for (let j = 0; j < block.inputNames_.length; j++) {
+          const paramName = block.inputNames_[j];
+          returnValue = returnValue.replace(new RegExp(`arg${j}\\b`, 'g'), paramName);
+        }
+      }
+
+      // Type-cast numeric returns to ensure proper Gradio compatibility
+      const outputType = block.outputTypes_[r] || 'string';
+      if (outputType === 'integer' && returnValue) {
+        returnValue = `int(${returnValue})`;
+      }
+
+      returnValues.push(returnValue || 'None');
     }
-  }
 
-  let returnStatement = returnValue ? `  return ${returnValue}\n` : '  return\n';
+    if (returnValues.length === 1) {
+      returnStatement = `  return ${returnValues[0]}\n`;
+    } else {
+      returnStatement = `  return (${returnValues.join(', ')})\n`;
+    }
+  } else {
+    // No outputs defined, return empty dict for MCP
+    returnStatement = '  return {}\n';
+  }
   let code = '';
-
-  // Tool definitions come before main function
-  if (toolDefs.length > 0) {
-    code += toolDefs.join('\n') + '\n\n';
-  }
 
   // Create the main function definition
   if (typedInputs.length > 0) {
-    code += `def create_mcp(${typedInputs.join(', ')}):\n${body}${returnStatement}\n`;
+    code += `def create_mcp(${typedInputs.join(', ')}):\n  out_amt = ${returnValues.length}\n\n${body}${returnStatement}\n`;
   } else {
-    code += `def create_mcp():\n${body}${returnStatement}`;
+    code += `def create_mcp():\n  out_amt = ${returnValues.length}\n\n${body || ''}${returnStatement}`;
   }
+
+  // Map Python types to Gradio components for inputs
+  const gradioInputs = [];
+  if (block.inputTypes_) {
+    for (let k = 0; k < block.inputTypes_.length; k++) {
+      const type = block.inputTypes_[k];
+      switch (type) {
+        case 'integer':
+          gradioInputs.push('gr.Number()');
+          break;
+        case 'string':
+          gradioInputs.push('gr.Textbox()');
+          break;
+        case 'list':
+          gradioInputs.push('gr.Dataframe()');
+          break;
+        default:
+          gradioInputs.push('gr.Textbox()');
+      }
+    }
+  }
+
+  // Map Python types to Gradio components for outputs
+  const gradioOutputs = [];
+  // Only add outputs if they actually exist in the block (R0, R1, etc.)
+  if (block.outputTypes_ && block.outputCount_ > 0 && block.getInput('R0')) {
+    // Use outputCount_ to ensure we only process actual outputs
+    for (let k = 0; k < block.outputCount_; k++) {
+      const type = block.outputTypes_[k];
+      switch (type) {
+        case 'integer':
+          gradioOutputs.push('gr.Number()');
+          break;
+        case 'string':
+          gradioOutputs.push('gr.Textbox()');
+          break;
+        case 'list':
+          gradioOutputs.push('gr.Dataframe()');
+          break;
+        default:
+          gradioOutputs.push('gr.Textbox()');
+      }
+    }
+  }
+
+  // Create Gradio Interface with dynamic I/O
+  // Always include outputs parameter, use empty list if no outputs
+  code += `\ndemo = gr.Interface(
+  fn=create_mcp,
+  inputs=[${gradioInputs.join(', ')}],
+  outputs=[${gradioOutputs.join(', ')}],
+  )
+
+demo.launch(mcp_server=True)
+`;
 
   return code;
 };
@@ -105,24 +168,76 @@ forBlock['tool_def'] = function (block, generator) {
   }
 
   let body = generator.statementToCode(block, 'BODY');
-  let returnValue = generator.valueToCode(block, 'RETURN', Order.ATOMIC);
+  let returnStatement = '';
 
-  // Ensure return expression uses correct parameter names
-  if (returnValue && block.inputNames_) {
-    for (let j = 0; j < block.inputNames_.length; j++) {
-      const paramName = block.inputNames_[j];
-      returnValue = returnValue.replace(new RegExp(`arg${j}\\b`, 'g'), paramName);
+  // Check if we have outputs defined and the R inputs exist
+  if (block.outputCount_ && block.outputCount_ > 0 && block.getInput('R0')) {
+    const returnValues = [];
+    for (let r = 0; r < block.outputCount_; r++) {
+      let returnValue = generator.valueToCode(block, 'R' + r, Order.ATOMIC);
+
+      // Replace placeholder args with actual names
+      if (returnValue && block.inputNames_) {
+        for (let j = 0; j < block.inputNames_.length; j++) {
+          const paramName = block.inputNames_[j];
+          returnValue = returnValue.replace(new RegExp(`arg${j}\\b`, 'g'), paramName);
+        }
+      }
+
+      // Type-cast numeric returns to ensure proper Gradio compatibility
+      const outputType = block.outputTypes_[r] || 'string';
+      if (outputType === 'integer' && returnValue) {
+        returnValue = `int(${returnValue})`;
+      }
+
+      returnValues.push(returnValue || 'None');
+    }
+
+    if (returnValues.length === 1) {
+      returnStatement = `  return ${returnValues[0]}\n`;
+    } else {
+      returnStatement = `  return (${returnValues.join(', ')})\n`;
+    }
+  } else {
+    // No outputs defined, add pass only if body is empty
+    if (!body || body.trim() === '') {
+      returnStatement = '  pass\n';
+    } else {
+      returnStatement = '';
     }
   }
-
-  let returnStatement = returnValue ? `  return ${returnValue}\n` : '  return\n';
 
   // Construct the function definition
   let code;
   if (typedInputs.length > 0) {
     code = `def ${name}(${typedInputs.join(', ')}):\n${body}${returnStatement}`;
   } else {
-    code = `def ${name}():\n${body}${returnStatement}`;
+    code = `def ${name}():\n${body || '  pass\n'}${returnStatement}`;
+  }
+
+  // Add output type hints as comments if outputs are defined
+  if (block.outputTypes_ && block.outputTypes_.length > 0) {
+    let outputTypes = [];
+    for (let k = 0; k < block.outputTypes_.length; k++) {
+      const type = block.outputTypes_[k];
+      const outName = block.outputNames_[k] || ('output' + k);
+      let pyType;
+      switch (type) {
+        case 'integer':
+          pyType = 'int';
+          break;
+        case 'string':
+          pyType = 'str';
+          break;
+        case 'list':
+          pyType = 'list';
+          break;
+        default:
+          pyType = 'Any';
+      }
+      outputTypes.push(`${outName}: ${pyType}`);
+    }
+    code = code.slice(0, -1) + `  # Returns: ${outputTypes.join(', ')}\n`;
   }
 
   // Return function definition as a string value (not executed immediately)

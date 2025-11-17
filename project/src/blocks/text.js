@@ -43,6 +43,9 @@ Blockly.Extensions.registerMutator(
         this.inputNames_ = [];
         this.inputTypes_ = [];
         this.inputRefBlocks_ = new Map();
+        this.outputCount_ = 0;
+        this.outputNames_ = [];
+        this.outputTypes_ = [];
         this.initialized_ = true;
         // Mark all reference blocks with their owner for later identification
         this._ownerBlockId = this.id;
@@ -57,6 +60,9 @@ Blockly.Extensions.registerMutator(
       this.inputCount_ = this.inputCount_ || 0;
       this.inputNames_ = this.inputNames_ || [];
       this.inputTypes_ = this.inputTypes_ || [];
+      this.outputCount_ = this.outputCount_ || 0;
+      this.outputNames_ = this.outputNames_ || [];
+      this.outputTypes_ = this.outputTypes_ || [];
 
       // Restore dynamically added input items
       for (let i = 0; i < this.inputCount_; i++) {
@@ -76,6 +82,20 @@ Blockly.Extensions.registerMutator(
         connection = itemBlock.nextConnection;
       }
 
+      // Restore dynamically added output items
+      let connection2 = containerBlock.getInput('STACK2').connection;
+      for (let i = 0; i < this.outputCount_; i++) {
+        const itemBlock = workspace.newBlock('container_output');
+        itemBlock.initSvg();
+        const typeVal = this.outputTypes_[i] || 'string';
+        const nameVal = this.outputNames_[i] || typeVal;
+        itemBlock.setFieldValue(typeVal, 'TYPE');
+        itemBlock.setFieldValue(nameVal, 'NAME');
+
+        connection2.connect(itemBlock.previousConnection);
+        connection2 = itemBlock.nextConnection;
+      }
+
       return containerBlock;
     },
 
@@ -85,7 +105,9 @@ Blockly.Extensions.registerMutator(
         if (!this.initialized_) this.initialize();
 
         const oldNames = [...(this.inputNames_ || [])];
+        const oldOutputNames = [...(this.outputNames_ || [])];
         const connections = [];
+        const returnConnections = [];
         let itemBlock = containerBlock.getInputTargetBlock('STACK');
 
         // Collect all child connections from mutator stack
@@ -94,10 +116,34 @@ Blockly.Extensions.registerMutator(
           itemBlock = itemBlock.nextConnection && itemBlock.nextConnection.targetBlock();
         }
 
+        // Save existing return connections before removing them
+        let rIdx = 0;
+        while (this.getInput('R' + rIdx)) {
+          const returnInput = this.getInput('R' + rIdx);
+          if (returnInput && returnInput.connection && returnInput.connection.targetConnection) {
+            returnConnections.push(returnInput.connection.targetConnection);
+          } else {
+            returnConnections.push(null);
+          }
+          rIdx++;
+        }
+
+        // Collect output specifications from STACK2
+        const outputSpecs = [];
+        let outputBlock = containerBlock.getInputTargetBlock('STACK2');
+        while (outputBlock) {
+          outputSpecs.push(outputBlock);
+          outputBlock = outputBlock.nextConnection && outputBlock.nextConnection.targetBlock();
+        }
+
         const newCount = connections.length;
+        const newOutputCount = outputSpecs.length;
         this.inputCount_ = newCount;
+        this.outputCount_ = newOutputCount;
         this.inputNames_ = this.inputNames_ || [];
         this.inputTypes_ = this.inputTypes_ || [];
+        this.outputNames_ = this.outputNames_ || [];
+        this.outputTypes_ = this.outputTypes_ || [];
 
         // Rebuild the new list of input names and types
         let idx = 0;
@@ -109,6 +155,16 @@ Blockly.Extensions.registerMutator(
           newNames.push(this.inputNames_[idx]);
           it = it.nextConnection && it.nextConnection.targetBlock();
           idx++;
+        }
+
+        // Rebuild the new list of output names and types
+        let oidx = 0;
+        const newOutputNames = [];
+        for (const outBlock of outputSpecs) {
+          this.outputTypes_[oidx] = outBlock.getFieldValue('TYPE') || 'string';
+          this.outputNames_[oidx] = outBlock.getFieldValue('NAME') || 'output' + oidx;
+          newOutputNames.push(this.outputNames_[oidx]);
+          oidx++;
         }
 
         // Dispose of removed input reference blocks when inputs shrink
@@ -182,9 +238,11 @@ Blockly.Extensions.registerMutator(
         // Remove all dynamic and temporary inputs before reconstruction
         let i = 0;
         while (this.getInput('X' + i)) this.removeInput('X' + i++);
+        let r = 0;
+        while (this.getInput('R' + r)) this.removeInput('R' + r++);
         let t = 0;
         while (this.getInput('T' + t)) this.removeInput('T' + t++);
-        ['INPUTS_TEXT', 'TOOLS_TEXT'].forEach(name => {
+        ['INPUTS_TEXT', 'RETURNS_TEXT', 'TOOLS_TEXT'].forEach(name => {
           if (this.getInput(name)) this.removeInput(name);
         });
 
@@ -239,6 +297,39 @@ Blockly.Extensions.registerMutator(
           }
         }
 
+        // Handle return inputs based on outputs
+        if (newOutputCount > 0) {
+          // Remove the default RETURN input if it exists
+          if (this.getInput('RETURN')) {
+            this.removeInput('RETURN');
+          }
+
+          // Add the "and return" label
+          const returnsText = this.appendDummyInput('RETURNS_TEXT');
+          returnsText.appendField('and return');
+
+          // Add each return value input slot
+          for (let j = 0; j < newOutputCount; j++) {
+            const type = this.outputTypes_[j] || 'string';
+            const name = this.outputNames_[j] || ('output' + j);
+            let check = null;
+            if (type === 'integer') check = 'Number';
+            if (type === 'string') check = 'String';
+
+            const returnInput = this.appendValueInput('R' + j);
+            if (check) returnInput.setCheck(check);
+            returnInput.appendField(type);
+            returnInput.appendField('"' + name + '":');
+
+            // Reconnect previous connection if it exists
+            if (returnConnections[j]) {
+              try {
+                returnInput.connection.connect(returnConnections[j]);
+              } catch { }
+            }
+          }
+        }
+
         this.workspace.render();
       } finally {
         Blockly.Events.enable();
@@ -250,6 +341,9 @@ Blockly.Extensions.registerMutator(
         inputCount: this.inputCount_,
         inputNames: this.inputNames_,
         inputTypes: this.inputTypes_,
+        outputCount: this.outputCount_,
+        outputNames: this.outputNames_,
+        outputTypes: this.outputTypes_,
         toolCount: this.toolCount_ || 0
       };
     },
@@ -258,6 +352,9 @@ Blockly.Extensions.registerMutator(
       this.inputCount_ = state.inputCount;
       this.inputNames_ = state.inputNames || [];
       this.inputTypes_ = state.inputTypes || [];
+      this.outputCount_ = state.outputCount || 0;
+      this.outputNames_ = state.outputNames || [];
+      this.outputTypes_ = state.outputTypes || [];
       this.toolCount_ = state.toolCount || 0;
     }
   },
@@ -268,10 +365,12 @@ Blockly.Extensions.registerMutator(
 // Base block definitions
 const container = {
   type: "container",
-  message0: "inputs %1 %2",
+  message0: "inputs %1 %2 outputs %3 %4",
   args0: [
     { type: "input_dummy", name: "title" },
     { type: "input_statement", name: "STACK" },
+    { type: "input_dummy", name: "title2" },
+    { type: "input_statement", name: "STACK2" },
   ],
   colour: 160,
   inputsInline: false
@@ -279,7 +378,27 @@ const container = {
 
 const container_input = {
   type: "container_input",
-  message0: "input %1 %2",
+  message0: "%1 %2",
+  args0: [
+    {
+      type: "field_dropdown",
+      name: "TYPE",
+      options: [
+        ["String", "string"],
+        ["Integer", "integer"],
+        ["List", "list"],
+      ]
+    },
+    { type: "field_input", name: "NAME" },
+  ],
+  previousStatement: null,
+  nextStatement: null,
+  colour: 210,
+};
+
+const container_output = {
+  type: "container_output",
+  message0: "%1 %2",
   args0: [
     {
       type: "field_dropdown",
@@ -320,11 +439,10 @@ const llm_call = {
 
 const create_mcp = {
   type: "create_mcp",
-  message0: "create MCP %1 %2 and return %3",
+  message0: "create MCP %1 %2",
   args0: [
     { type: "input_dummy" },
     { type: "input_statement", name: "BODY" },
-    { type: "input_value", name: "RETURN" },
   ],
   colour: 160,
   inputsInline: true,
@@ -336,12 +454,11 @@ const create_mcp = {
 
 const tool_def = {
   type: "tool_def",
-  message0: "function %1 %2 %3 and return %4",
+  message0: "function %1 %2 %3",
   args0: [
     { type: "field_input", name: "NAME", text: "newFunction" },
     { type: "input_dummy" },
     { type: "input_statement", name: "BODY" },
-    { type: "input_value", name: "RETURN" },
   ],
   colour: 160,
   inputsInline: true,
@@ -390,18 +507,35 @@ function generateUniqueToolName(workspace, excludeBlock) {
   return name;
 }
 
+// Register create_mcp block separately to include custom init logic  
+Blockly.Blocks['create_mcp'] = {
+  init: function () {
+    this.jsonInit(create_mcp);
+    // Apply extensions
+    Blockly.Extensions.apply('test_cleanup_extension', this, false);
+    // Initialize mutator state
+    if (this.initialize) {
+      this.initialize();
+    }
+  }
+};
+
 // Register tool_def block separately to include custom init logic
 Blockly.Blocks['tool_def'] = {
   init: function () {
     this.jsonInit(tool_def);
     // Apply extensions
     Blockly.Extensions.apply('test_cleanup_extension', this, false);
+    // Initialize mutator state
+    if (this.initialize) {
+      this.initialize();
+    }
   }
 };
 
 export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
-  create_mcp,
   container,
   container_input,
+  container_output,
   llm_call,
 ]);
