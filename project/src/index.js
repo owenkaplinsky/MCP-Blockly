@@ -153,6 +153,47 @@ const updateCode = () => {
 
 try {
   load(ws);
+
+  // After loading, create the reference blocks that should be in the inputs
+  setTimeout(() => {
+    const mutatorBlocks = ws.getAllBlocks(false).filter(b =>
+      (b.type === 'create_mcp' || b.type === 'func_def')
+    );
+
+    for (const block of mutatorBlocks) {
+      // Create reference blocks for each input if they don't exist
+      if (block.inputNames_ && block.inputNames_.length > 0) {
+        for (let i = 0; i < block.inputNames_.length; i++) {
+          const name = block.inputNames_[i];
+          const input = block.getInput('X' + i);
+
+          // Only create if input exists AND has no connected block yet
+          if (input && input.connection && !input.connection.targetBlock()) {
+            // Create the reference block
+            const blockType = `input_reference_${name}`;
+            const refBlock = ws.newBlock(blockType);
+            refBlock.initSvg();
+            refBlock.setDeletable(false);
+            refBlock._ownerBlockId = block.id;
+            refBlock.render();
+
+            // Connect it
+            if (input.connection && refBlock.outputConnection) {
+              input.connection.connect(refBlock.outputConnection);
+            }
+
+            // Track it
+            if (!block.inputRefBlocks_) {
+              block.inputRefBlocks_ = new Map();
+            }
+            block.inputRefBlocks_.set(name, refBlock);
+          }
+        }
+      }
+    }
+
+    ws.render();
+  }, 100);
 } catch (e) {
   console.warn('Workspace load failed, clearing storage:', e);
   localStorage.clear();

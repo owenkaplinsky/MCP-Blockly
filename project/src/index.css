@@ -129,6 +129,38 @@ body {
   background: #e8ebf0;
 }
 
+/* --- GitHub Link --- */
+#githubLink {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+#githubLink a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: white;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+}
+
+#githubLink a:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.05);
+}
+
+#githubLink a:active {
+  transform: scale(0.95);
+}
+
+#githubLink svg {
+  width: 24px;
+  height: 24px;
+}
+
 /* --- Main Split Layout --- */
 #pageContainer {
   display: flex;

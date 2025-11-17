@@ -1,4 +1,4 @@
-import * as Blockly from 'blockly/core';
+import * as Blockly from 'blockly';
 import { pythonGenerator } from 'blockly/python';
 
 // Utility to create a unique input reference block type
@@ -18,9 +18,23 @@ function createInputRefBlockType(inputName) {
             }
           ],
           output: null,
-          colour: 210,
+          colour: 255,
           outputShape: 2
         });
+      },
+
+      // Save the owner block ID for proper restoration after deserialization
+      saveExtraState: function () {
+        return {
+          ownerBlockId: this._ownerBlockId || null
+        };
+      },
+
+      // Restore the owner block ID
+      loadExtraState: function (state) {
+        if (state.ownerBlockId) {
+          this._ownerBlockId = state.ownerBlockId;
+        }
       }
     };
     pythonGenerator.forBlock[blockType] = function () {
@@ -103,6 +117,30 @@ Blockly.Extensions.registerMutator(
       Blockly.Events.disable();
       try {
         if (!this.initialized_) this.initialize();
+
+        // Ensure the inputRefBlocks_ map is properly initialized
+        if (!this.inputRefBlocks_) {
+          this.inputRefBlocks_ = new Map();
+        }
+
+        // Check if we need to find existing reference blocks in the workspace
+        // This happens after deserialization when the blocks exist but aren't tracked
+        if (this.inputRefBlocks_.size === 0 && this.inputNames_ && this.inputNames_.length > 0) {
+          const allBlocks = this.workspace.getAllBlocks(false);
+          for (let i = 0; i < this.inputNames_.length; i++) {
+            const name = this.inputNames_[i];
+            const blockType = `input_reference_${name}`;
+            // Find orphaned reference blocks that belong to this block
+            const refBlock = allBlocks.find(b =>
+              b.type === blockType &&
+              b._ownerBlockId === this.id &&
+              !b.getParent()
+            );
+            if (refBlock) {
+              this.inputRefBlocks_.set(name, refBlock);
+            }
+          }
+        }
 
         const oldNames = [...(this.inputNames_ || [])];
         const oldOutputNames = [...(this.outputNames_ || [])];
@@ -268,6 +306,7 @@ Blockly.Extensions.registerMutator(
 
           const blockType = createInputRefBlockType(name);
           if (!existingRefBlock) {
+            // Only create a new reference block if none exists
             const refBlock = this.workspace.newBlock(blockType);
             refBlock.initSvg();
             refBlock.setDeletable(false);
@@ -278,8 +317,12 @@ Blockly.Extensions.registerMutator(
             if (input.connection && refBlock.outputConnection) {
               input.connection.connect(refBlock.outputConnection);
             }
-          } else if (input.connection && existingRefBlock.outputConnection) {
-            input.connection.connect(existingRefBlock.outputConnection);
+          } else {
+            // Reference block exists - only reconnect if not already connected to this input
+            existingRefBlock._ownerBlockId = this.id;
+            if (input.connection && !input.connection.targetBlock() && existingRefBlock.outputConnection) {
+              input.connection.connect(existingRefBlock.outputConnection);
+            }
           }
 
           pythonGenerator.forBlock[blockType] = function () {
@@ -349,13 +392,68 @@ Blockly.Extensions.registerMutator(
     },
 
     loadExtraState: function (state) {
-      this.inputCount_ = state.inputCount;
+      this.inputCount_ = state.inputCount || 0;
       this.inputNames_ = state.inputNames || [];
       this.inputTypes_ = state.inputTypes || [];
       this.outputCount_ = state.outputCount || 0;
       this.outputNames_ = state.outputNames || [];
       this.outputTypes_ = state.outputTypes || [];
       this.toolCount_ = state.toolCount || 0;
+
+      // Ensure the reference block map is initialized
+      if (!this.inputRefBlocks_) {
+        this.inputRefBlocks_ = new Map();
+      }
+
+      // Immediately rebuild the inputs structure so they exist when connections are loaded
+      // This must happen BEFORE Blockly tries to restore connections
+      if (this.inputCount_ > 0) {
+        const inputsText = this.appendDummyInput('INPUTS_TEXT');
+        inputsText.appendField('with inputs:');
+        this.moveInputBefore('INPUTS_TEXT', 'BODY');
+
+        for (let j = 0; j < this.inputCount_; j++) {
+          const type = this.inputTypes_[j] || 'string';
+          const name = this.inputNames_[j] || ('arg' + j);
+          let check = null;
+          if (type === 'integer') check = 'Number';
+          if (type === 'string') check = 'String';
+
+          const input = this.appendValueInput('X' + j);
+          if (check) input.setCheck(check);
+          input.appendField(type);
+          this.moveInputBefore('X' + j, 'BODY');
+
+          // Create the block type definition if it doesn't exist
+          const blockType = createInputRefBlockType(name);
+          pythonGenerator.forBlock[blockType] = function () {
+            return [name, pythonGenerator.ORDER_ATOMIC];
+          };
+        }
+      }
+
+      // Also rebuild return inputs if there are outputs
+      if (this.outputCount_ > 0) {
+        if (this.getInput('RETURN')) {
+          this.removeInput('RETURN');
+        }
+
+        const returnsText = this.appendDummyInput('RETURNS_TEXT');
+        returnsText.appendField('and return');
+
+        for (let j = 0; j < this.outputCount_; j++) {
+          const type = this.outputTypes_[j] || 'string';
+          const name = this.outputNames_[j] || ('output' + j);
+          let check = null;
+          if (type === 'integer') check = 'Number';
+          if (type === 'string') check = 'String';
+
+          const returnInput = this.appendValueInput('R' + j);
+          if (check) returnInput.setCheck(check);
+          returnInput.appendField(type);
+          returnInput.appendField('"' + name + '":');
+        }
+      }
     }
   },
   null,
@@ -425,7 +523,10 @@ const llm_call = {
       name: "MODEL",
       options: [
         ["gpt-3.5-turbo", "gpt-3.5-turbo-0125"],
+        ["gpt-4o", "gpt-4o-2024-08-06"],
         ["gpt-5-mini", "gpt-5-mini-2025-08-07"],
+        ["gpt-5", "gpt-5-2025-08-07"],
+        ["gpt-4o search", "gpt-4o-search-preview-2025-03-11"],
       ]
     },
     { type: "input_value", name: "PROMPT", check: "String" },
