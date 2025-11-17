@@ -372,7 +372,7 @@ const container = {
     { type: "input_dummy", name: "title2" },
     { type: "input_statement", name: "STACK2" },
   ],
-  colour: 160,
+  colour: 210,
   inputsInline: false
 };
 
@@ -432,9 +432,45 @@ const llm_call = {
   ],
   inputsInline: true,
   output: "String",
-  colour: 230,
+  colour: 160,
   tooltip: "Call the selected OpenAI model to get a response.",
   helpUrl: "",
+};
+
+// Dynamic function call block
+const func_call = {
+  type: "func_call",
+  message0: "func %1",
+  args0: [
+    {
+      type: "field_dropdown",
+      name: "FUNC_NAME",
+      options: function () {
+        // This will be populated dynamically
+        const options = [["<no functions>", "NONE"]];
+        if (this.sourceBlock_) {
+          const workspace = this.sourceBlock_.workspace;
+          const funcBlocks = workspace.getAllBlocks(false).filter(b => b.type === 'func_def');
+          if (funcBlocks.length > 0) {
+            options.length = 0;
+            funcBlocks.forEach(block => {
+              const name = block.getFieldValue('NAME');
+              if (name) {
+                options.push([name, name]);
+              }
+            });
+          }
+        }
+        return options;
+      }
+    }
+  ],
+  inputsInline: true,
+  output: null,
+  colour: 210,
+  tooltip: "Call a function defined in the workspace",
+  helpUrl: "",
+  extensions: ["func_call_dynamic"]
 };
 
 const create_mcp = {
@@ -444,7 +480,7 @@ const create_mcp = {
     { type: "input_dummy" },
     { type: "input_statement", name: "BODY" },
   ],
-  colour: 160,
+  colour: 210,
   inputsInline: true,
   mutator: "test_mutator",
   inputCount_: 0,
@@ -460,7 +496,7 @@ const func_def = {
     { type: "input_dummy" },
     { type: "input_statement", name: "BODY" },
   ],
-  colour: 160,
+  colour: 210,
   inputsInline: true,
   mutator: "test_mutator",
   inputCount_: 0,
@@ -479,6 +515,188 @@ Blockly.Extensions.register('test_cleanup_extension', function () {
       this.inputRefBlocks_.clear();
     }
     if (oldDispose) oldDispose.call(this, healStack, recursive);
+  };
+});
+
+// Extension for dynamic function call blocks
+Blockly.Extensions.register('func_call_dynamic', function () {
+  const block = this;
+
+  // Store current function being called
+  block.currentFunction_ = null;
+  block.paramCount_ = 0;
+
+  // Function to update the block based on selected function
+  block.updateShape_ = function () {
+    const funcName = this.getFieldValue('FUNC_NAME');
+
+    // Temporarily disable events to prevent recursive updates
+    const eventsEnabled = Blockly.Events.isEnabled();
+    if (eventsEnabled) {
+      Blockly.Events.disable();
+    }
+
+    try {
+      // Remove all existing parameter inputs
+      let i = 0;
+      while (this.getInput('ARG' + i)) {
+        this.removeInput('ARG' + i);
+        i++;
+      }
+
+      if (funcName && funcName !== 'NONE') {
+        // Find the function definition block
+        const workspace = this.workspace;
+        const funcBlock = workspace.getAllBlocks(false).find(b =>
+          b.type === 'func_def' && b.getFieldValue('NAME') === funcName
+        );
+
+        if (funcBlock) {
+          this.currentFunction_ = funcName;
+
+          // Get the function's parameters
+          const inputCount = funcBlock.inputCount_ || 0;
+          const inputNames = funcBlock.inputNames_ || [];
+          const inputTypes = funcBlock.inputTypes_ || [];
+
+          this.paramCount_ = inputCount;
+
+          // Add parameter inputs matching the function definition
+          for (let j = 0; j < inputCount; j++) {
+            const paramName = inputNames[j] || ('arg' + j);
+            const paramType = inputTypes[j] || 'string';
+
+            let check = null;
+            if (paramType === 'integer') check = 'Number';
+            if (paramType === 'string') check = 'String';
+
+            const input = this.appendValueInput('ARG' + j);
+            if (check) input.setCheck(check);
+            input.appendField(`${paramType} "${paramName}"`);
+          }
+
+          // Set output type based on function's return type
+          if (funcBlock.outputCount_ && funcBlock.outputCount_ > 0) {
+            const outputType = funcBlock.outputTypes_[0] || 'string';
+            if (outputType === 'integer') {
+              this.setOutput(true, 'Number');
+            } else if (outputType === 'string') {
+              this.setOutput(true, 'String');
+            } else {
+              this.setOutput(true, null);
+            }
+          } else {
+            this.setOutput(true, null);
+          }
+        } else {
+          this.currentFunction_ = null;
+          this.paramCount_ = 0;
+        }
+      } else {
+        this.currentFunction_ = null;
+        this.paramCount_ = 0;
+      }
+    } finally {
+      // Re-enable events if they were enabled before
+      if (eventsEnabled) {
+        Blockly.Events.enable();
+      }
+    }
+  };
+
+  // Defer initial shape update to ensure block is fully initialized
+  setTimeout(() => {
+    block.updateShape_();
+  }, 0);
+
+  // Listen for dropdown changes
+  block.getField('FUNC_NAME').setValidator(function (newValue) {
+    const block = this.getSourceBlock();
+    // Ensure the update happens after the dropdown value is set
+    setTimeout(() => {
+      block.updateShape_();
+    }, 0);
+    return newValue;
+  });
+
+  // Listen for workspace changes to update when functions are modified
+  const workspaceListener = function (event) {
+    // Skip if block has been disposed
+    if (block.disposed) {
+      return;
+    }
+
+    if (event.type === Blockly.Events.BLOCK_CHANGE ||
+      event.type === Blockly.Events.BLOCK_DELETE ||
+      event.type === Blockly.Events.BLOCK_CREATE ||
+      event.type === Blockly.Events.BLOCK_MOVE) {
+
+      // Check if a func_def block was changed
+      const changedBlock = block.workspace.getBlockById(event.blockId);
+
+      if (event.type === Blockly.Events.BLOCK_DELETE) {
+        // Delay check to ensure workspace has been updated
+        setTimeout(() => {
+          if (!block.disposed && block.currentFunction_ &&
+            !block.workspace.getAllBlocks(false).some(b =>
+              b.type === 'func_def' && b.getFieldValue('NAME') === block.currentFunction_)) {
+            block.dispose(true);
+          }
+        }, 0);
+      } else if (changedBlock && changedBlock.type === 'func_def') {
+        // If the function being called was modified, update shape
+        const funcName = changedBlock.getFieldValue('NAME');
+        if (funcName === block.currentFunction_ ||
+          (event.oldValue && event.oldValue === block.currentFunction_)) {
+          // Handle renaming
+          if (event.type === Blockly.Events.BLOCK_CHANGE &&
+            event.name === 'NAME' && event.oldValue === block.currentFunction_) {
+            block.currentFunction_ = funcName;
+            block.setFieldValue(funcName, 'FUNC_NAME');
+          }
+          setTimeout(() => {
+            if (!block.disposed) {
+              block.updateShape_();
+            }
+          }, 0);
+        }
+      }
+
+      // Update dropdown options
+      const dropdown = block.getField('FUNC_NAME');
+      if (dropdown) {
+        const workspace = block.workspace;
+        const funcBlocks = workspace.getAllBlocks(false).filter(b => b.type === 'func_def');
+        const options = funcBlocks.length > 0
+          ? funcBlocks.map(b => [b.getFieldValue('NAME'), b.getFieldValue('NAME')])
+          : [["<no functions>", "NONE"]];
+
+        dropdown.menuGenerator_ = options;
+
+        // If current function no longer exists, reset
+        if (block.currentFunction_ && !options.some(opt => opt[1] === block.currentFunction_)) {
+          block.setFieldValue('NONE', 'FUNC_NAME');
+          setTimeout(() => {
+            if (!block.disposed) {
+              block.updateShape_();
+            }
+          }, 0);
+        }
+      }
+    }
+  };
+
+  block.workspace.addChangeListener(workspaceListener);
+
+  // Clean up the listener when block is disposed
+  const oldDispose = block.dispose;
+  block.dispose = function (healStack) {
+    if (block.workspace) {
+      block.workspace.removeChangeListener(workspaceListener);
+    }
+    if (oldDispose) {
+      oldDispose.call(this, healStack);
+    }
   };
 });
 
@@ -529,6 +747,33 @@ Blockly.Blocks['func_def'] = {
     // Initialize mutator state
     if (this.initialize) {
       this.initialize();
+    }
+  }
+};
+
+// Register func_call block separately to include custom logic
+Blockly.Blocks['func_call'] = {
+  init: function () {
+    this.jsonInit(func_call);
+  },
+
+  // Save the current function name and parameter count for serialization
+  saveExtraState: function () {
+    return {
+      currentFunction: this.currentFunction_ || null,
+      paramCount: this.paramCount_ || 0
+    };
+  },
+
+  // Load the saved state and rebuild the block
+  loadExtraState: function (state) {
+    this.currentFunction_ = state.currentFunction;
+    this.paramCount_ = state.paramCount;
+    // The shape will be updated by the extension after loading
+    if (this.updateShape_) {
+      setTimeout(() => {
+        this.updateShape_();
+      }, 0);
     }
   }
 };

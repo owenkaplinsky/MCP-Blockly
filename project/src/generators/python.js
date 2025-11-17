@@ -79,9 +79,10 @@ forBlock['create_mcp'] = function (block, generator) {
   }
 
   // Map Python types to Gradio components for inputs
+  // Only add inputs if they actually exist in the block (X0, X1, etc.)
   const gradioInputs = [];
-  if (block.inputTypes_) {
-    for (let k = 0; k < block.inputTypes_.length; k++) {
+  if (block.inputCount_ && block.inputCount_ > 0 && block.getInput('X0')) {
+    for (let k = 0; k < block.inputCount_; k++) {
       const type = block.inputTypes_[k];
       switch (type) {
         case 'integer':
@@ -102,7 +103,7 @@ forBlock['create_mcp'] = function (block, generator) {
   // Map Python types to Gradio components for outputs
   const gradioOutputs = [];
   // Only add outputs if they actually exist in the block (R0, R1, etc.)
-  if (block.outputTypes_ && block.outputCount_ > 0 && block.getInput('R0')) {
+  if (block.outputCount_ && block.outputCount_ > 0 && block.getInput('R0')) {
     // Use outputCount_ to ensure we only process actual outputs
     for (let k = 0; k < block.outputCount_; k++) {
       const type = block.outputTypes_[k];
@@ -199,12 +200,8 @@ forBlock['func_def'] = function (block, generator) {
       returnStatement = `  return (${returnValues.join(', ')})\n`;
     }
   } else {
-    // No outputs defined, add pass only if body is empty
-    if (!body || body.trim() === '') {
-      returnStatement = '  pass\n';
-    } else {
-      returnStatement = '';
-    }
+    // No outputs defined, return None
+    returnStatement = '  return None\n';
   }
 
   // Construct the function definition
@@ -212,7 +209,7 @@ forBlock['func_def'] = function (block, generator) {
   if (typedInputs.length > 0) {
     code = `def ${name}(${typedInputs.join(', ')}):\n${body}${returnStatement}`;
   } else {
-    code = `def ${name}():\n${body || '  pass\n'}${returnStatement}`;
+    code = `def ${name}():\n${body}${returnStatement}`;
   }
 
   // Add output type hints as comments if outputs are defined
@@ -236,8 +233,7 @@ forBlock['func_def'] = function (block, generator) {
           pyType = 'Any';
       }
       outputTypes.push(`${outName}: ${pyType}`);
-    }
-    code = code.slice(0, -1) + `  # Returns: ${outputTypes.join(', ')}\n`;
+    };
   }
 
   // Return function definition as a string value (not executed immediately)
@@ -251,4 +247,37 @@ forBlock['llm_call'] = function (block, generator) {
   // Generate code to call an LLM model with a prompt
   const code = `llm_call(${prompt}, model="${model}")`;
   return [code, Order.NONE];
+};
+
+forBlock['func_call'] = function (block, generator) {
+  const funcName = block.getFieldValue('FUNC_NAME');
+
+  if (!funcName || funcName === 'NONE') {
+    return ['None', Order.ATOMIC];
+  }
+
+  // Find the function definition to get parameter info
+  const workspace = block.workspace;
+  const funcBlock = workspace.getAllBlocks(false).find(b =>
+    b.type === 'func_def' && b.getFieldValue('NAME') === funcName
+  );
+
+  if (!funcBlock) {
+    return ['None', Order.ATOMIC];
+  }
+
+  // Build the argument list based on actual inputs on the block
+  const args = [];
+  let i = 0;
+
+  // Check for inputs that actually exist on the block
+  while (block.getInput('ARG' + i)) {
+    const argValue = generator.valueToCode(block, 'ARG' + i, Order.NONE);
+    args.push(argValue || 'None');
+    i++;
+  }
+
+  // Generate the function call
+  const code = `${funcName}(${args.join(', ')})`;
+  return [code, Order.FUNCTION_CALL];
 };

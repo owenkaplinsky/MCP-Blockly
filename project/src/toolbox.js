@@ -37,6 +37,10 @@ export const toolbox = {
           kind: 'block',
           type: 'func_def',
         },
+        {
+          kind: 'block',
+          type: 'func_call',
+        },
       ]
     },
     {
@@ -366,36 +370,6 @@ export const toolbox = {
         },
         {
           kind: 'block',
-          type: 'text_indexOf',
-          inputs: {
-            VALUE: {
-              block: {
-                type: 'variables_get',
-              },
-            },
-            FIND: {
-              shadow: {
-                type: 'text',
-                fields: {
-                  TEXT: 'abc',
-                },
-              },
-            },
-          },
-        },
-        {
-          kind: 'block',
-          type: 'text_charAt',
-          inputs: {
-            VALUE: {
-              block: {
-                type: 'variables_get',
-              },
-            },
-          },
-        },
-        {
-          kind: 'block',
           type: 'text_getSubstring',
           inputs: {
             STRING: {
@@ -562,12 +536,6 @@ export const toolbox = {
       name: 'Variables',
       categorystyle: 'variable_category',
       custom: 'VARIABLE',
-    },
-    {
-      kind: 'category',
-      name: 'Functions',
-      categorystyle: 'procedure_category',
-      custom: 'PROCEDURE',
     },
   ],
 };
