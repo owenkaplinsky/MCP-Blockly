@@ -101,6 +101,16 @@ weatherButton.addEventListener("click", () => {
   }
 });
 
+const factText = "{\"workspaceComments\":[{\"height\":66,\"width\":575,\"id\":\"x/Z2E2Oid(4||-pQ)h*;\",\"x\":51.00000000000023,\"y\":-35.76388082917071,\"text\":\"A fact checker that uses a searching LLM to verify the validity of a claim.\"}],\"blocks\":{\"languageVersion\":0,\"blocks\":[{\"type\":\"create_mcp\",\"id\":\"yScKJD/XLhk)D}qn2TW:\",\"x\":50,\"y\":50,\"deletable\":false,\"extraState\":{\"inputCount\":1,\"inputNames\":[\"prompt\"],\"inputTypes\":[\"string\"],\"outputCount\":1,\"outputNames\":[\"result\"],\"outputTypes\":[\"string\"],\"toolCount\":0},\"inputs\":{\"X0\":{\"block\":{\"type\":\"input_reference_prompt\",\"id\":\"-r%M-[oX1]?RxxF_V(V@\",\"deletable\":false,\"extraState\":{\"ownerBlockId\":\"yScKJD/XLhk)D}qn2TW:\"},\"fields\":{\"VARNAME\":\"prompt\"}}},\"R0\":{\"block\":{\"type\":\"llm_call\",\"id\":\"m/*D8ZBx;QZlUN*aw15U\",\"fields\":{\"MODEL\":\"gpt-4o-search-preview-2025-03-11\"},\"inputs\":{\"PROMPT\":{\"block\":{\"type\":\"text_join\",\"id\":\"e@#`RVKXpIZ9__%zUK]`\",\"extraState\":{\"itemCount\":3},\"inputs\":{\"ADD0\":{\"block\":{\"type\":\"text\",\"id\":\"M3QD})k`FXiizaF,gA{9\",\"fields\":{\"TEXT\":\"Verify whether the following claim: \\\"\"}}},\"ADD1\":{\"block\":{\"type\":\"input_reference_prompt\",\"id\":\"B4.LNZ0es`RFM0Xi@SL:\",\"extraState\":{\"ownerBlockId\":\"yScKJD/XLhk)D}qn2TW:\"},\"fields\":{\"VARNAME\":\"prompt\"}}},\"ADD2\":{\"block\":{\"type\":\"text\",\"id\":\"Ng!fFR+xTMdmgWZv6Oh{\",\"fields\":{\"TEXT\":\"\\\" is true or not. Return one of the following values: \\\"True\\\", \\\"Unsure\\\", \\\"False\\\", and nothing else. You may not say anything but one of these answers no matter what.\"}}}}}}}}}}}]}}"
+factButton.addEventListener("click", () => {
+  try {
+    const fileContent = JSON.parse(factText);
+    Blockly.serialization.workspaces.load(fileContent, ws);
+  } catch (error) {
+    console.error("Error loading weather.txt contents:", error);
+  }
+});
+
 undoButton.addEventListener("click", () => {
   ws.undo(false);
 });
