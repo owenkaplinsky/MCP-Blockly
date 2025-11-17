@@ -41,6 +41,66 @@ const ws = Blockly.inject(blocklyDiv, {
 
 window.workspace = ws;
 
+const newButton = document.querySelector('#newButton');
+
+newButton.addEventListener("click", () => {
+  ws.clear()
+
+  // Create the MCP block
+  const mcpBlock = ws.newBlock('create_mcp');
+  mcpBlock.initSvg();
+  mcpBlock.setDeletable(false);
+  mcpBlock.setMovable(true);  // Allow moving but not deleting
+
+  // Position it in a reasonable spot
+  mcpBlock.moveBy(50, 50);
+  mcpBlock.render();
+});
+
+loadButton.addEventListener("click", () => {
+  const input = document.createElement('input');
+  let fileContent;
+  input.type = 'file';
+  input.accept = '.txt'; // Specify the file types you want to accept
+  input.onchange = function (event) {
+    const file = event.target.files[0];
+    const reader = new FileReader();
+    reader.onload = function (event) {
+      fileContent = JSON.parse(event.target.result); // Parse directly without decoding
+      Blockly.serialization.workspaces.load(fileContent, ws);
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+});
+
+saveButton.addEventListener("click", () => {
+  const state = Blockly.serialization.workspaces.save(ws);
+  const stateString = JSON.stringify(state);
+
+  var filename = "mcpBlockly.txt";
+  var element = document.createElement('a');
+
+  element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(stateString));
+  element.setAttribute('download', filename);
+  element.style.display = 'none';
+  document.body.appendChild(element);
+  element.click();
+  document.body.removeChild(element);
+});
+
+undoButton.addEventListener("click", () => {
+  ws.undo(false);
+});
+
+redoButton.addEventListener("click", () => {
+  ws.undo(true);
+});
+
+cleanWorkspace.addEventListener("click", () => {
+  ws.cleanUp();
+});
+
 // Observe any size change to the blockly container
 const observer = new ResizeObserver(() => {
   Blockly.svgResize(ws);
