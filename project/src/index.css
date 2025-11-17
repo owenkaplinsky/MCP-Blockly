@@ -241,12 +241,22 @@ body {
 }
 
 /* Slightly inset the Gradio iframe */
-#chatContainer iframe {
+#chatContainer iframe,
+#gradioContainer iframe {
   border-radius: 6px;
   overflow: hidden;
   width: 100%;
   height: 100%;
   border: none;
+}
+
+#gradioContainer {
+  background: #2c2c2c;
+  border: none;
+  flex: 1;
+  box-sizing: border-box;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 /* Style the code area with matching margin and contrast */

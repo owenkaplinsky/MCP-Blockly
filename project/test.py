@@ -9,7 +9,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -232,5 +232,5 @@ demo = build_interface()
 app = gr.mount_gradio_app(app, demo, path="/")
 
 if __name__ == "__main__":
-    print("[BOOT] Running Gradio+FastAPI combo on http://127.0.0.1:7860")
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    print("[BOOT] Running Gradio+FastAPI combo on http://127.0.0.1:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

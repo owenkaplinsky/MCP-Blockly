@@ -203,12 +203,16 @@ const updateChatCode = () => {
     codeEl.textContent = code;
   }
 
-  // Optionally send to a different endpoint or process differently
-  // fetch("http://127.0.0.1:7860/update_chat_code", {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify({ code }),
-  // });
+  // Send to the chat update endpoint
+  fetch("http://127.0.0.1:7861/update_chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  }).then(() => {
+    console.log("[Blockly] Sent updated Chat code to backend");
+  }).catch((err) => {
+    console.error("[Blockly] Error sending Chat code:", err);
+  });
 };
 
 try {

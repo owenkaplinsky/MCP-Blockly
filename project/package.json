@@ -7,7 +7,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "webpack --mode production",
-    "start": "concurrently \"python app.py\" \"webpack serve --open --mode development\""
+    "start": "concurrently \"python test.py\" \"python chat.py\" \"webpack serve --open --mode development\""
   },
   "keywords": [
     "blockly"
