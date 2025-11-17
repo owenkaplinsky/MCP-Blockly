@@ -43,10 +43,24 @@ export const toolbox = {
         {
           kind: 'block',
           type: 'call_api',
+          inputs: {
+            URL: {
+              shadow: {
+                type: 'text',
+                fields: {
+                  text: "10",
+                },
+              },
+            },
+          },
         },
         {
           kind: 'block',
           type: 'in_json',
+        },
+        {
+          kind: 'block',
+          type: 'make_json',
         },
       ]
     },

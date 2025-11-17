@@ -1,5 +1,9 @@
 import * as Blockly from 'blockly';
 import { pythonGenerator } from 'blockly/python';
+import { registerFieldMultilineInput } from '@blockly/field-multilineinput';
+
+registerFieldMultilineInput();
+
 
 // Utility to create a unique input reference block type
 function createInputRefBlockType(inputName) {
@@ -540,11 +544,25 @@ const llm_call = {
 
 const call_api = {
   "type": "call_api",
-  "message0": "call API with url %1",
+  "message0": "call API with method %1 url %2 headers %3",
   "args0": [
     {
-      "type": "field_input",
+      type: "field_dropdown",
+      name: "METHOD",
+      options: [
+        ["GET", "GET"],
+        ["POST", "POST"],
+        ["PUT", "PUT"],
+        ["DELETE", "DELETE"],
+      ]
+    },
+    {
+      "type": "input_value",
       "name": "URL",
+    },
+    {
+      "type": "input_value",
+      "name": "HEADERS",
     },
   ],
   "output": ["String", "Integer", "List"],
@@ -569,6 +587,38 @@ const in_json = {
   "colour": 165,
   "inputsInline": true
 }
+
+const json_field = {
+  type: "json_field",
+  message0: "field",
+  args0: [],
+  previousStatement: null,
+  nextStatement: null,
+  colour: 165,
+};
+
+const make_json_container = {
+  type: "make_json_container",
+  message0: "fields %1",
+  args0: [
+    { type: "input_statement", name: "STACK" },
+  ],
+  colour: 165,
+  inputsInline: false
+};
+
+const make_json = {
+  type: "make_json",
+  message0: "make JSON %1",
+  args0: [
+    { type: "input_dummy" },
+  ],
+  colour: 165,
+  inputsInline: false,
+  output: ["String", "Integer"],
+  mutator: "json_mutator",
+  fieldCount_: 1,
+};
 
 // Dynamic function call block
 const func_call = {
@@ -650,6 +700,142 @@ Blockly.Extensions.register('test_cleanup_extension', function () {
     if (oldDispose) oldDispose.call(this, healStack, recursive);
   };
 });
+
+// JSON mutator for dynamic field creation
+Blockly.Extensions.registerMutator(
+  'json_mutator',
+  {
+
+    decompose: function (workspace) {
+      const containerBlock = workspace.newBlock('make_json_container');
+      containerBlock.initSvg();
+      let connection = containerBlock.getInput('STACK').connection;
+
+      // Initialize defaults if not set
+      if (this.fieldCount_ === undefined) {
+        this.fieldCount_ = 0;
+        this.fieldKeys_ = [];
+      }
+
+      // Restore dynamically added field items
+      for (let i = 0; i < this.fieldCount_; i++) {
+        const itemBlock = workspace.newBlock('json_field');
+        itemBlock.initSvg();
+        // Store the connection for compose
+        const input = this.getInput('FIELD' + i);
+        if (input && input.connection && input.connection.targetConnection) {
+          itemBlock.valueConnection_ = input.connection.targetConnection;
+        }
+
+        connection.connect(itemBlock.previousConnection);
+        connection = itemBlock.nextConnection;
+      }
+
+      return containerBlock;
+    },
+
+    compose: function (containerBlock) {
+      Blockly.Events.disable();
+      try {
+        // Initialize defaults if not set
+        if (this.fieldCount_ === undefined) {
+          this.fieldCount_ = 0;
+          this.fieldKeys_ = [];
+        }
+
+        const connections = [];
+        let itemBlock = containerBlock.getInputTargetBlock('STACK');
+
+        // Collect all child connections from mutator stack
+        while (itemBlock) {
+          connections.push(itemBlock.valueConnection_);
+          itemBlock = itemBlock.nextConnection && itemBlock.nextConnection.targetBlock();
+        }
+
+        const newCount = connections.length;
+        const oldCount = this.fieldCount_;
+        this.fieldCount_ = newCount;
+
+        // Preserve old keys and extend array if needed
+        if (!this.fieldKeys_) {
+          this.fieldKeys_ = [];
+        }
+
+        // Remove all dynamic inputs before reconstruction
+        let i = 0;
+        while (this.getInput('FIELD' + i)) this.removeInput('FIELD' + i++);
+
+        // Add each dynamic field input with editable key name
+        for (let j = 0; j < newCount; j++) {
+          // Use existing key or create new one
+          if (!this.fieldKeys_[j]) {
+            this.fieldKeys_[j] = 'key' + j;
+          }
+          const key = this.fieldKeys_[j];
+          const input = this.appendValueInput('FIELD' + j);
+          const field = new Blockly.FieldTextInput(key);
+          field.setValidator((newValue) => {
+            // Update the stored key when user edits it
+            this.fieldKeys_[j] = newValue || 'key' + j;
+            return newValue;
+          });
+          input.appendField(field, 'KEY' + j);
+          input.appendField(':');
+          this.moveInputBefore('FIELD' + j, null);
+        }
+
+        // Trim fieldKeys array if fields were removed
+        if (newCount < oldCount) {
+          this.fieldKeys_.length = newCount;
+        }
+
+        // Reconnect preserved connections to new structure
+        for (let k = 0; k < newCount; k++) {
+          const conn = connections[k];
+          if (conn) {
+            try {
+              this.getInput('FIELD' + k).connection.connect(conn);
+            } catch { }
+          }
+        }
+
+        this.workspace.render();
+      } finally {
+        Blockly.Events.enable();
+      }
+    },
+
+    saveExtraState: function () {
+      return {
+        fieldCount: this.fieldCount_,
+        fieldKeys: this.fieldKeys_,
+      };
+    },
+
+    loadExtraState: function (state) {
+      this.fieldCount_ = state.fieldCount || 0;
+      this.fieldKeys_ = state.fieldKeys || [];
+
+      // Immediately rebuild the inputs structure so they exist when connections are loaded
+      if (this.fieldCount_ > 0) {
+        for (let j = 0; j < this.fieldCount_; j++) {
+          const key = this.fieldKeys_[j] || ('key' + j);
+          const input = this.appendValueInput('FIELD' + j);
+          const field = new Blockly.FieldTextInput(key);
+          field.setValidator((newValue) => {
+            // Update the stored key when user edits it
+            this.fieldKeys_[j] = newValue || 'key' + j;
+            return newValue;
+          });
+          input.appendField(field, 'KEY' + j);
+          input.appendField(':');
+        }
+      }
+    }
+  },
+  null,
+  ['json_field']
+);
 
 // Extension for dynamic function call blocks
 Blockly.Extensions.register('func_call_dynamic', function () {
@@ -908,6 +1094,30 @@ Blockly.Blocks['func_call'] = {
         this.updateShape_();
       }, 0);
     }
+  }
+};
+
+// Register json_field block (internal mutator block, not user-visible)
+Blockly.Blocks['json_field'] = {
+  init: function () {
+    this.jsonInit(json_field);
+  }
+};
+
+// Register make_json_container block (internal mutator block, not user-visible)
+Blockly.Blocks['make_json_container'] = {
+  init: function () {
+    this.jsonInit(make_json_container);
+  }
+};
+
+// Register make_json block separately to include custom init logic
+Blockly.Blocks['make_json'] = {
+  init: function () {
+    this.jsonInit(make_json);
+    // Initialize with no fields by default
+    this.fieldCount_ = 0;
+    this.fieldKeys_ = [];
   }
 };
 

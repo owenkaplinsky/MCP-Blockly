@@ -283,10 +283,12 @@ forBlock['func_call'] = function (block, generator) {
 };
 
 forBlock['call_api'] = function (block, generator) {
-  const url = block.getFieldValue('URL');
+  const url = generator.valueToCode(block, 'URL', Order.NONE) || "''";
+  const method = block.getFieldValue('METHOD');
+  const headers = generator.valueToCode(block, 'HEADERS', Order.NONE) || "''";
 
   // Generate code to call an LLM model with a prompt
-  const code = `call_api(url="${url}")`;
+  const code = `call_api(url=${url}, method="${method}", headers=${headers})`;
   return [code, Order.NONE];
 };
 
@@ -297,4 +299,23 @@ forBlock['in_json'] = function (block, generator) {
   // Generate code to call an LLM model with a prompt
   const code = `${json}["${name}"]`;
   return [code, Order.NONE];
+};
+
+forBlock['make_json'] = function (block, generator) {
+  const pairs = [];
+  let i = 0;
+
+  // Collect all key-value pairs
+  while (block.getInput('FIELD' + i)) {
+    // Get the key from the text field on the block
+    const keyField = block.getField('KEY' + i);
+    const key = keyField ? keyField.getValue() : (block.fieldKeys_[i] || ('key' + i));
+    const value = generator.valueToCode(block, 'FIELD' + i, Order.NONE) || "''";
+    pairs.push(`"${key}": ${value}`);
+    i++;
+  }
+
+  // Generate valid Python dict syntax
+  const code = pairs.length > 0 ? `{${pairs.join(', ')}}` : '{}';
+  return [code, Order.ATOMIC];
 };
