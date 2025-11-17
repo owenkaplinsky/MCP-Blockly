@@ -174,18 +174,60 @@ body {
   cursor: col-resize;
 }
 
-/* --- Add dark grey padding around Gradio + Code --- */
+/* Add dark grey padding around Gradio + Code --- */
 #outputPane {
   flex: 0 0 30%;
   background: #2c2c2c;
   /* dark grey background around both sections */
-  padding: 16px;
-  /* padding around the inside */
-  gap: 16px;
-  /* space between iframe and code */
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* --- Tab Bar --- */
+#tabBar {
+  display: flex;
+  background: #1f1f1f;
+  border-bottom: 2px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.tab {
+  padding: 12px 20px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #999;
+  background: #1f1f1f;
+  border: none;
+  transition: all 0.2s ease;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.tab:hover {
+  color: #ccc;
+}
+
+.tab.active {
+  color: #6366f1;
+  border-bottom-color: #6366f1;
+}
+
+/* --- Tab Content --- */
+.tabContent {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  padding: 16px;
+  gap: 16px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tabContent.active {
+  display: flex;
 }
 
 /* Add matching background to the Gradio frame container */
@@ -194,6 +236,8 @@ body {
   border: none;
   flex: 0 0 50%;
   box-sizing: border-box;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 /* Slightly inset the Gradio iframe */
@@ -206,7 +250,8 @@ body {
 }
 
 /* Style the code area with matching margin and contrast */
-#generatedCode {
+#generatedCode,
+#aichatCode {
   background: #1f1f1f;
   color: #e0e7ff;
   border-radius: 6px;

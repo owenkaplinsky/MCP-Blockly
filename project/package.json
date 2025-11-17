@@ -15,6 +15,7 @@
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "css-loader": "^6.7.1",
     "html-webpack-plugin": "^5.5.0",
     "source-map-loader": "^4.0.1",
@@ -24,7 +25,9 @@
     "webpack-dev-server": "^4.11.1"
   },
   "dependencies": {
+    "@blockly/field-multilineinput": "^6.0.3",
+    "@blockly/theme-dark": "^8.0.1",
     "@blockly/toolbox-search": "^3.0.2",
-    "blockly": "^11.0.0"
+    "blockly": "^12.0.0"
   }
 }
