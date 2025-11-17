@@ -2,6 +2,7 @@ import * as Blockly from 'blockly';
 import { blocks } from './blocks/text';
 import { forBlock } from './generators/python';
 import { pythonGenerator } from 'blockly/python';
+import { chatGenerator, forBlock as chatForBlock } from './generators/chat';
 import { save, load } from './serialization';
 import { toolbox } from './toolbox';
 import '@blockly/toolbox-search';
@@ -11,6 +12,9 @@ import './index.css';
 // Register the blocks and generator with Blockly
 Blockly.common.defineBlocks(blocks);
 Object.assign(pythonGenerator.forBlock, forBlock);
+
+// Register chat generator blocks
+Object.assign(chatGenerator.forBlock, chatForBlock);
 
 // Set up UI elements and inject Blockly
 const blocklyDiv = document.getElementById('blocklyDiv');
@@ -187,6 +191,26 @@ const updateCode = () => {
     });
 };
 
+// Update function for the Chat generator (AI Chat tab)
+const updateChatCode = () => {
+  let code = chatGenerator.workspaceToCode(ws);
+  const codeEl = document.querySelector('#aichatCode code');
+
+  // You can add any chat-specific preprocessing here
+  // For example, adding headers or formatting
+  
+  if (codeEl) {
+    codeEl.textContent = code;
+  }
+
+  // Optionally send to a different endpoint or process differently
+  // fetch("http://127.0.0.1:7860/update_chat_code", {
+  //   method: "POST",
+  //   headers: { "Content-Type": "application/json" },
+  //   body: JSON.stringify({ code }),
+  // });
+};
+
 try {
   load(ws);
 
@@ -250,6 +274,7 @@ if (existingMcpBlocks.length === 0) {
 }
 
 updateCode();
+updateChatCode();
 
 ws.addChangeListener((e) => {
   if (e.isUiEvent) return;
@@ -318,4 +343,5 @@ ws.addChangeListener((e) => {
     return;
   }
   updateCode();
+  updateChatCode();
 });
