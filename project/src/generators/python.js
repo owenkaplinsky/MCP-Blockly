@@ -281,3 +281,20 @@ forBlock['func_call'] = function (block, generator) {
   const code = `${funcName}(${args.join(', ')})`;
   return [code, Order.FUNCTION_CALL];
 };
+
+forBlock['call_api'] = function (block, generator) {
+  const url = block.getFieldValue('URL');
+
+  // Generate code to call an LLM model with a prompt
+  const code = `call_api(url="${url}")`;
+  return [code, Order.NONE];
+};
+
+forBlock['in_json'] = function (block, generator) {
+  const name = block.getFieldValue('NAME');
+  const json = generator.valueToCode(block, 'JSON', Order.NONE);
+
+  // Generate code to call an LLM model with a prompt
+  const code = `${json}["${name}"]`;
+  return [code, Order.NONE];
+};

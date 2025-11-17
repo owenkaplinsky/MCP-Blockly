@@ -124,11 +124,25 @@ const updateCode = () => {
   
 `;
 
+  const API = `def call_api(url):
+  import requests
+
+  response = requests.get(url)
+  data = response.json()
+  return data
+
+`;
+
   const blocks = ws.getAllBlocks(false);
   const hasCall = blocks.some(block => block.type === 'llm_call');
+  const hasAPI = blocks.some(block => block.type === 'call_api');
 
   if (hasCall) {
     code = call + code;
+  }
+
+  if (hasAPI) {
+    code = API + code;
   }
 
   code = "import gradio as gr\n\n" + code

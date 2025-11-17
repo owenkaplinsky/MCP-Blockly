@@ -15,16 +15,8 @@ export const toolbox = {
       categorystyle: 'logic_category',
       contents: [
         {
-          "kind": "label",
-          "text": "Text"
-        },
-        {
           kind: 'block',
           type: 'llm_call',
-        },
-        {
-          "kind": "label",
-          "text": "Image"
         },
       ]
     },
@@ -40,6 +32,21 @@ export const toolbox = {
         {
           kind: 'block',
           type: 'func_call',
+        },
+      ]
+    },
+    {
+      kind: 'category',
+      name: 'JSON and API',
+      categorystyle: 'logic_category',
+      contents: [
+        {
+          kind: 'block',
+          type: 'call_api',
+        },
+        {
+          kind: 'block',
+          type: 'in_json',
         },
       ]
     },

@@ -538,6 +538,38 @@ const llm_call = {
   helpUrl: "",
 };
 
+const call_api = {
+  "type": "call_api",
+  "message0": "call API with url %1",
+  "args0": [
+    {
+      "type": "field_input",
+      "name": "URL",
+    },
+  ],
+  "output": ["String", "Integer", "List"],
+  "colour": 165,
+  "inputsInline": true
+}
+
+const in_json = {
+  "type": "in_json",
+  "message0": "get %1 from JSON %2",
+  "args0": [
+    {
+      "type": "field_input",
+      "name": "NAME",
+    },
+    {
+      "type": "input_value",
+      "name": "JSON",
+    },
+  ],
+  "output": ["String", "Integer", "List"],
+  "colour": 165,
+  "inputsInline": true
+}
+
 // Dynamic function call block
 const func_call = {
   type: "func_call",
@@ -884,4 +916,6 @@ export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   container_input,
   container_output,
   llm_call,
+  call_api,
+  in_json,
 ]);
