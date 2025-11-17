@@ -126,8 +126,6 @@ def execute_blockly_logic(user_inputs):
 
 def build_interface():
     with gr.Blocks() as demo:
-        gr.Markdown("# Blockly Code Executor")
-        
         # Create a fixed number of potential input fields (max 10)
         input_fields = []
         input_labels = []

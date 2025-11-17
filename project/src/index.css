@@ -1,56 +1,228 @@
-html,
-body {
-  height: 100%;
+* {
   margin: 0;
   padding: 0;
-  max-width: 100vw;
-}
-
-#pageContainer {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-#blocklyDiv {
-  flex: 1;
-  min-width: 600px;
-  height: 100%;
-}
-
-#outputPane {
-  display: flex;
-  flex-direction: column;
-  width: 600px;
-  flex-shrink: 0;
-  height: 100%;
-  overflow: hidden;
-  padding: 1rem;
   box-sizing: border-box;
 }
 
-#chatContainer {
-  flex: 0 0 400px;
-  /* fixed height for iframe area */
+html,
+body {
+  height: 100%;
   width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  overflow: hidden;
 }
 
+/* --- Top Bar --- */
+#topBar {
+  display: flex;
+  align-items: center;
+  height: 50px;
+  background: #6366f1;
+  padding: 0 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+#titleSection {
+  display: flex;
+  align-items: center;
+}
+
+#titleSection h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: white;
+  letter-spacing: 0.5px;
+}
+
+#divider {
+  width: 2px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.3);
+  margin: 0 20px;
+}
+
+/* --- Menus --- */
+#menuSection {
+  display: flex;
+  gap: 5px;
+}
+
+.menuGroup {
+  position: relative;
+}
+
+.menuButton {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+.menuButton:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.menuButton:active {
+  transform: translateY(0);
+}
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  min-width: 150px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: all 0.2s ease;
+  margin-top: 4px;
+  z-index: 2000;
+}
+
+.menuGroup:hover .dropdown,
+.dropdown:hover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.dropdownItem {
+  display: block;
+  padding: 12px 16px;
+  color: #333;
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  border-left: 3px solid transparent;
+}
+
+.dropdownItem:first-child {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.dropdownItem:last-child {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.dropdownItem:hover {
+  background: #f0f2f5;
+  border-left-color: #667eea;
+  padding-left: 20px;
+}
+
+.dropdownItem:active {
+  background: #e8ebf0;
+}
+
+/* --- Main Split Layout --- */
+#pageContainer {
+  display: flex;
+  width: 100%;
+  height: calc(100% - 50px);
+  overflow: hidden;
+}
+
+#pageContainer.dragging {
+  user-select: none;
+  cursor: col-resize;
+}
+
+/* --- Add dark grey padding around Gradio + Code --- */
+#outputPane {
+  flex: 0 0 30%;
+  background: #2c2c2c;
+  /* dark grey background around both sections */
+  padding: 16px;
+  /* padding around the inside */
+  gap: 16px;
+  /* space between iframe and code */
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* Add matching background to the Gradio frame container */
+#chatContainer {
+  background: #2c2c2c;
+  border: none;
+  flex: 0 0 50%;
+  box-sizing: border-box;
+}
+
+/* Slightly inset the Gradio iframe */
 #chatContainer iframe {
+  border-radius: 6px;
+  overflow: hidden;
   width: 100%;
   height: 100%;
   border: none;
-  display: block;
 }
 
+/* Style the code area with matching margin and contrast */
 #generatedCode {
+  background: #1f1f1f;
+  color: #e0e7ff;
+  border-radius: 6px;
+  padding: 16px;
+  box-sizing: border-box;
   flex: 1;
-  background: #111;
-  color: #0f0;
-  padding: 10px;
-  font-family: monospace;
-  white-space: pre-wrap;
   overflow-y: auto;
-  border: 1px solid #333;
-  margin-top: 10px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* --- Vertical Resizer --- */
+.verticalResizer {
+  height: 8px;
+  background: #e5e7eb;
+  cursor: row-resize;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+  z-index: 1500;
+}
+
+.verticalResizer:hover,
+.verticalResizer.active {
+  background: #6366f1;
+}
+
+/* --- Resizer --- */
+.resizer {
+  width: 8px;
+  background: #e5e7eb;
+  cursor: col-resize;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+  z-index: 1500;
+}
+
+.resizer:hover,
+.resizer.active {
+  background: #6366f1;
+}
+
+/* --- Right Pane --- */
+#blocklyDiv {
+  flex: 1;
+  min-width: 40%;
+  height: 100%;
+  overflow: hidden;
+  background: #fff;
 }

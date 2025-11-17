@@ -3,20 +3,152 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>Blockly Sample App</title>
+  <title>Blockly MCP Builder</title>
 </head>
 
 <body>
+  <div id="topBar">
+    <div id="titleSection">
+      <h1>Blockly MCP Builder</h1>
+    </div>
+    <div id="divider"></div>
+    <div id="menuSection">
+      <div class="menuGroup">
+        <button class="menuButton">File</button>
+        <div class="dropdown">
+          <a href="#" class="dropdownItem" data-action="new">New</a>
+          <a href="#" class="dropdownItem" data-action="open">Open</a>
+          <a href="#" class="dropdownItem" data-action="download">Download</a>
+        </div>
+      </div>
+
+      <div class="menuGroup">
+        <button class="menuButton">Edit</button>
+        <div class="dropdown">
+          <a href="#" class="dropdownItem" data-action="undo">Undo</a>
+          <a href="#" class="dropdownItem" data-action="redo">Redo</a>
+          <a href="#" class="dropdownItem" data-action="cleanup">Clean up</a>
+          <a href="#" class="dropdownItem" data-action="clear">Clear</a>
+        </div>
+      </div>
+
+      <div class="menuGroup">
+        <button class="menuButton">Examples</button>
+        <div class="dropdown"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="pageContainer">
     <div id="outputPane">
       <div id="chatContainer">
-        <iframe src="http://127.0.0.1:7860" style="width: 100%; height: 600px; border: none;"></iframe>
+        <iframe src="http://127.0.0.1:7860" style="width: 100%; height: 100%; border: none;"></iframe>
       </div>
-
+      <div class="verticalResizer"></div>
       <pre id="generatedCode"><code></code></pre>
     </div>
+    <div class="resizer"></div>
     <div id="blocklyDiv"></div>
   </div>
+
+  <script>
+    // Horizontal resizer (output pane vs blockly)
+    const resizer = document.querySelector('.resizer');
+    const outputPane = document.getElementById('outputPane');
+    const pageContainer = document.getElementById('pageContainer');
+
+    let startX = 0;
+    let startWidth = 0;
+
+    function onPointerMove(e) {
+      const containerRect = pageContainer.getBoundingClientRect();
+      const containerWidth = containerRect.width;
+
+      const dx = e.clientX - startX;
+      let newWidthPx = startWidth + dx;
+
+      const minWidth = containerWidth * 0.2;
+      const maxWidth = containerWidth * 0.59;
+      newWidthPx = Math.max(minWidth, Math.min(maxWidth, newWidthPx));
+
+      const newPercent = (newWidthPx / containerWidth) * 100;
+      outputPane.style.flex = `0 0 ${newPercent}%`;
+    }
+
+    function onPointerUp() {
+      resizer.releasePointerCapture(activePointerId);
+      resizer.removeEventListener('pointermove', onPointerMove);
+      resizer.removeEventListener('pointerup', onPointerUp);
+      resizer.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    let activePointerId = null;
+
+    resizer.addEventListener('pointerdown', (e) => {
+      const rect = outputPane.getBoundingClientRect();
+      startX = e.clientX;
+      startWidth = rect.width;
+      activePointerId = e.pointerId;
+
+      resizer.classList.add('active');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      resizer.setPointerCapture(activePointerId);
+      resizer.addEventListener('pointermove', onPointerMove);
+      resizer.addEventListener('pointerup', onPointerUp);
+    });
+
+    // Vertical resizer (gradio vs code)
+    const verticalResizer = document.querySelector('.verticalResizer');
+    const chatContainer = document.getElementById('chatContainer');
+    const generatedCode = document.getElementById('generatedCode');
+
+    let startY = 0;
+    let startHeight = 0;
+    let activePointerId2 = null;
+
+    function onVerticalPointerMove(e) {
+      const outputPaneRect = outputPane.getBoundingClientRect();
+      const outputPaneHeight = outputPaneRect.height;
+
+      const dy = e.clientY - startY;
+      let newHeightPx = startHeight + dy;
+
+      const minHeight = outputPaneHeight * 0.4;
+      const maxHeight = outputPaneHeight * 0.78;
+      newHeightPx = Math.max(minHeight, Math.min(maxHeight, newHeightPx));
+
+      const newPercent = (newHeightPx / outputPaneHeight) * 100;
+      chatContainer.style.flex = `0 0 ${newPercent}%`;
+    }
+
+    function onVerticalPointerUp() {
+      verticalResizer.releasePointerCapture(activePointerId2);
+      verticalResizer.removeEventListener('pointermove', onVerticalPointerMove);
+      verticalResizer.removeEventListener('pointerup', onVerticalPointerUp);
+      verticalResizer.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    verticalResizer.addEventListener('pointerdown', (e) => {
+      const rect = chatContainer.getBoundingClientRect();
+      startY = e.clientY;
+      startHeight = rect.height;
+      activePointerId2 = e.pointerId;
+
+      verticalResizer.classList.add('active');
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+
+      verticalResizer.setPointerCapture(activePointerId2);
+      verticalResizer.addEventListener('pointermove', onVerticalPointerMove);
+      verticalResizer.addEventListener('pointerup', onVerticalPointerUp);
+    });
+  </script>
 </body>
 
 </html>

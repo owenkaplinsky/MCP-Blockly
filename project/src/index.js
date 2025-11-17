@@ -5,6 +5,7 @@ import { pythonGenerator } from 'blockly/python';
 import { save, load } from './serialization';
 import { toolbox } from './toolbox';
 import '@blockly/toolbox-search';
+import DarkTheme from '@blockly/theme-dark';
 import './index.css';
 
 // Register the blocks and generator with Blockly
@@ -13,32 +14,6 @@ Object.assign(pythonGenerator.forBlock, forBlock);
 
 // Set up UI elements and inject Blockly
 const blocklyDiv = document.getElementById('blocklyDiv');
-
-// Create a custom theme (Scratch-like colors and hats)
-const myTheme = Blockly.Theme.defineTheme('myScratchTheme', {
-  base: Blockly.Themes.Classic,
-  startHats: true,
-  blockStyles: {
-    logic_blocks: {
-      colourPrimary: '#5C81A6',
-      colourSecondary: '#4A6D8B',
-      colourTertiary: '#3B5572',
-    },
-    loop_blocks: {
-      colourPrimary: '#5CA65C',
-      colourSecondary: '#498949',
-      colourTertiary: '#3B723B',
-    },
-  },
-  categoryStyles: {
-    logic_category: { colour: '#5C81A6' },
-    loop_category: { colour: '#5CA65C' },
-  },
-  componentStyles: {
-    workspaceBackgroundColour: '#f0f0f0',
-    toolboxBackgroundColour: '#ffffff',
-  },
-});
 
 // Inject Blockly with theme + renderer
 const ws = Blockly.inject(blocklyDiv, {
@@ -61,8 +36,16 @@ const ws = Blockly.inject(blocklyDiv, {
     pinch: true
   },
   renderer: 'zelos',
-  theme: myTheme,
+  theme: DarkTheme,
 });
+
+window.workspace = ws;
+
+// Observe any size change to the blockly container
+const observer = new ResizeObserver(() => {
+  Blockly.svgResize(ws);
+});
+observer.observe(blocklyDiv);
 
 const updateCode = () => {
   let code = pythonGenerator.workspaceToCode(ws);
