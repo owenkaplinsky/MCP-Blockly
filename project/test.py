@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import uvicorn
 import re
-from dotenv import load_dotenv
+import os
 
 app = FastAPI()
 
@@ -15,9 +15,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-load_dotenv()
-
 latest_blockly_code = ""
+stored_api_key = ""  # Store the API key in memory
 
 
 @app.post("/update_code")
@@ -28,11 +27,47 @@ async def update_code(request: Request):
     print("\n[FASTAPI] Updated Blockly code:\n", latest_blockly_code)
     return {"ok": True}
 
+@app.get("/get_api_key")
+async def get_api_key_endpoint():
+    """Get the current API key from memory"""
+    global stored_api_key
+    api_key = stored_api_key or os.environ.get("OPENAI_API_KEY", "")
+    
+    # Mask the API key for security (show only first 7 and last 4 characters)
+    if api_key and len(api_key) > 15:
+        masked_key = api_key[:7] + '...' + api_key[-4:]
+    else:
+        masked_key = api_key if api_key else ""
+    
+    return {"api_key": masked_key}
+
+@app.post("/set_api_key")
+async def set_api_key_endpoint(request: Request):
+    """Save API key to environment variable"""
+    global stored_api_key
+    data = await request.json()
+    api_key = data.get("api_key", "").strip()
+    
+    try:
+        # Store in memory and set environment variable
+        stored_api_key = api_key
+        os.environ["OPENAI_API_KEY"] = api_key
+        
+        print(f"[API KEY] Set OPENAI_API_KEY in environment")
+        return {"success": True}
+    except Exception as e:
+        print(f"Error setting API key: {e}")
+        return {"success": False, "error": str(e)}
+
 
 def execute_blockly_logic(user_inputs):
-    global latest_blockly_code
+    global latest_blockly_code, stored_api_key
     if not latest_blockly_code.strip():
         return "No Blockly code available"
+
+    # Ensure API key is set in environment before executing
+    if stored_api_key:
+        os.environ["OPENAI_API_KEY"] = stored_api_key
 
     result = ""
 
@@ -232,5 +267,5 @@ demo = build_interface()
 app = gr.mount_gradio_app(app, demo, path="/")
 
 if __name__ == "__main__":
-    print("[BOOT] Running Gradio+FastAPI combo on http://127.0.0.1:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("[BOOT] Running Gradio+FastAPI combo on http://127.0.0.1:7860")
+    uvicorn.run(app, host="0.0.0.0", port=7860)

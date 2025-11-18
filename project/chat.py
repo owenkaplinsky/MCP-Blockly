@@ -2,22 +2,14 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from dotenv import load_dotenv
 import uvicorn
 import gradio as gr
 
+# Initialize OpenAI client (will be updated when API key is set)
+client = None
 
-# Load environment variables
-load_dotenv()
-
-# Initialize OpenAI client
-api_key = os.getenv("OPENAI_API_KEY")
-if api_key:
-    client = OpenAI(api_key=api_key)
-else:
-    print("Warning: OPENAI_API_KEY not found in environment variables.")
-    print("Chat functionality will be limited.")
-    client = None
+# Store API key in memory for this process
+stored_api_key = ""
 
 # Global variable to store the latest chat context
 latest_blockly_chat_code = ""
@@ -41,6 +33,20 @@ async def update_chat(request: Request):
     print("\n[FASTAPI] Updated Blockly chat code:\n", latest_blockly_chat_code)
     return {"code": latest_blockly_chat_code}
 
+@app.post("/set_api_key_chat")
+async def set_api_key_chat(request: Request):
+    """Receive API key from frontend and store it"""
+    global stored_api_key
+    data = await request.json()
+    api_key = data.get("api_key", "").strip()
+    
+    # Store in memory and set environment variable for this process
+    stored_api_key = api_key
+    os.environ["OPENAI_API_KEY"] = api_key
+    
+    print(f"[CHAT API KEY] Set OPENAI_API_KEY in chat.py environment")
+    return {"success": True}
+
 def create_gradio_interface():
     # Hardcoded system prompt
     SYSTEM_PROMPT = """You are an AI assistant created to help with Blockly MCP tasks. Users can create MCP (multi-context-protocol) servers
@@ -61,8 +67,20 @@ When the user asks questions or talks about their project, don't talk like a rob
 are doing, state the goal or things. Remember, that info is just for you and you need to speak normally to the user."""
     
     def chat_with_context(message, history):
-        if not client:
-            return "OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file."
+        # Check if API key is set and create/update client
+        global client, stored_api_key
+        
+        # Use stored key or check environment
+        api_key = stored_api_key or os.environ.get("OPENAI_API_KEY")
+        
+        if api_key and (not client or (hasattr(client, 'api_key') and client.api_key != api_key)):
+            try:
+                client = OpenAI(api_key=api_key)
+            except Exception as e:
+                return f"Error initializing OpenAI client: {str(e)}"
+        
+        if not client or not api_key:
+            return "OpenAI API key not configured. Please set it in File > Settings in the Blockly interface."
         
         # Get the chat context from the global variable
         global latest_blockly_chat_code

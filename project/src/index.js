@@ -84,7 +84,7 @@ saveButton.addEventListener("click", () => {
   const state = Blockly.serialization.workspaces.save(ws);
   const stateString = JSON.stringify(state);
 
-  var filename = "mcpBlockly.txt";
+  var filename = "mcpBlockly_project.txt";
   var element = document.createElement('a');
 
   element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(stateString));
@@ -93,6 +93,87 @@ saveButton.addEventListener("click", () => {
   document.body.appendChild(element);
   element.click();
   document.body.removeChild(element);
+});
+
+// Download Code button
+const downloadCodeButton = document.querySelector('#downloadCodeButton');
+downloadCodeButton.addEventListener("click", () => {
+  // Get the current generated code
+  const codeEl = document.querySelector('#generatedCode code');
+  const code = codeEl ? codeEl.textContent : '';
+  
+  if (!code) {
+    alert('No code to download');
+    return;
+  }
+
+  var filename = "mcp_generated.py";
+  var element = document.createElement('a');
+  
+  element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(code));
+  element.setAttribute('download', filename);
+  element.style.display = 'none';
+  document.body.appendChild(element);
+  element.click();
+  document.body.removeChild(element);
+});
+
+// Settings button and API Key Modal
+const settingsButton = document.querySelector('#settingsButton');
+const apiKeyModal = document.querySelector('#apiKeyModal');
+const apiKeyInput = document.querySelector('#apiKeyInput');
+const saveApiKeyButton = document.querySelector('#saveApiKey');
+const cancelApiKeyButton = document.querySelector('#cancelApiKey');
+
+settingsButton.addEventListener("click", () => {
+  apiKeyModal.style.display = 'flex';
+  
+  // Load current API key from backend
+  fetch("http://127.0.0.1:7860/get_api_key", {
+    method: "GET",
+  })
+  .then(response => response.json())
+  .then(data => {
+    apiKeyInput.value = data.api_key || '';
+  })
+  .catch(err => {
+    console.error("Error loading API key:", err);
+  });
+});
+
+saveApiKeyButton.addEventListener("click", () => {
+  const apiKey = apiKeyInput.value;
+  
+  // Save API key to both backend servers (test.py and chat.py)
+  Promise.all([
+    fetch("http://127.0.0.1:7860/set_api_key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey }),
+    }),
+    fetch("http://127.0.0.1:7861/set_api_key_chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey }),
+    })
+  ])
+  .then(async (responses) => {
+    const results = await Promise.all(responses.map(r => r.json()));
+    if (results.every(r => r.success)) {
+      alert('API key saved successfully');
+      apiKeyModal.style.display = 'none';
+    } else {
+      alert('Failed to save API key to all services');
+    }
+  })
+  .catch(err => {
+    console.error("Error saving API key:", err);
+    alert('Failed to save API key');
+  });
+});
+
+cancelApiKeyButton.addEventListener("click", () => {
+  apiKeyModal.style.display = 'none';
 });
 
 const weatherText = `{"workspaceComments":[{"height":120,"width":479,"id":"XI5[EHp-Ow+kinXf6n5y","x":51.234375,"y":-83,"text":"Gets temperature of location with a latitude and a longitude.\\n\\nThe API requires a minimum of one decimal point to work."}],"blocks":{"languageVersion":0,"blocks":[{"type":"create_mcp","id":")N.HEG1x]Z/,k#TeWr,S","x":50,"y":50,"deletable":false,"extraState":{"inputCount":2,"inputNames":["latitude","longitude"],"inputTypes":["integer","integer"],"outputCount":1,"outputNames":["output0"],"outputTypes":["string"],"toolCount":0},"inputs":{"X0":{"block":{"type":"input_reference_latitude","id":"]3mj!y}qfRt+!okheU7L","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}},"X1":{"block":{"type":"input_reference_longitude","id":"Do/{HFNGSd.!;POiKS?D","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"longitude"}}},"R0":{"block":{"type":"in_json","id":"R|j?_8s^H{l0;UZ-oQt3","fields":{"NAME":"temperature_2m"},"inputs":{"JSON":{"block":{"type":"in_json","id":"X=M,R1@7bRjJVZIPi[qD","fields":{"NAME":"current"},"inputs":{"JSON":{"block":{"type":"call_api","id":"^(.vyM.yni08S~c1EBm=","fields":{"METHOD":"GET"},"inputs":{"URL":{"shadow":{"type":"text","id":"}.T;_U_OsRS)B_y09p % { ","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"OwH9uERJPTGQG!UER#ch","inputs":{"FROM":{"shadow":{"type":"text","id":"ya05#^ 7 % UbUeXX#eDSmH","fields":{"TEXT":"{latitude}"}}},"TO":{"shadow":{"type":"text","id":": _ZloQuh9c-MNf-U]!k5","fields":{"TEXT":""}},"block":{"type":"input_reference_latitude","id":"?%@)3sErZ)}=#4ags#gu","extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}},"TEXT":{"shadow":{"type":"text","id":"w@zsP)m6:WjkUp,ln3$x","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"ImNPsvzD7r^+1MJ%IirV","inputs":{"FROM":{"shadow":{"type":"text","id":"%o(3rro?WLIFpmE0#MMM","fields":{"TEXT":"{longitude}"}}},"TO":{"shadow":{"type":"text","id":"Zpql-%oJ_sdSi | r |* er | ","fields":{"TEXT":""}},"block":{"type":"input_reference_longitude","id":"WUgiJP$X + zY#f$5nhnTX","extraState":{"ownerBlockId":") N.HEG1x]Z /, k#TeWr, S"},"fields":{"VARNAME":"longitude"}}},"TEXT":{"shadow":{"type":"text","id":", (vw$o_s7P = b4P; 8]}yj","fields":{"TEXT":"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,wind_speed_10m"}}}}}}}}}}}}}}}}}}}}]}}`;
@@ -140,8 +221,13 @@ const updateCode = () => {
   const call = `def llm_call(prompt, model):
   from openai import OpenAI
   import os
-
-  client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+  
+  api_key = os.environ.get("OPENAI_API_KEY")
+  
+  if not api_key:
+    return "Error: OpenAI API key not configured. Please set it in File > Settings"
+  
+  client = OpenAI(api_key=api_key)
 
   messages = [{"role": "user", "content": prompt}]
 
