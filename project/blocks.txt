@@ -1,0 +1,26 @@
+# AI
+llm_call(inputs(MODEL: "gpt-3.5-turbo-0125/gpt-4o-2024-08-06/gpt-5-mini-2025-08-07/gpt-5-2025-08-07/gpt-4o-search-preview-2025-03-11", PROMPT: value))
+
+# JSON and API
+in_json(inputs(NAME: value, JSON: value)) // Name is the value you want to extract from the JSON
+
+# Logic
+logic_negate(inputs())
+logic_boolean(inputs(BOOL: "TRUE/FALSE"))
+logic_null(inputs())
+logic_compare(inputs(OP: "EQ/NEQ/LT/LTE/GT/GTE", A: value, B: value))
+logic_operation(inputs(OP: "AND/OR", A: value, B: value))
+
+# Math
+math_number(inputs(NUM: value))
+math_arithmetic(inputs(OP: "ADD/MINUS/MULTIPLY/DIVIDE/POWER", A: value, B: value))
+
+# Text
+text(inputs(TEXT: value))
+text_length(VALUE: value)
+text_join(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
+
+# Lists
+lists_length(inputs(VALUE: value))
+lists_isEmpty(inputs(VALUE: value))
+lists_reverse(inputs(LIST: value))

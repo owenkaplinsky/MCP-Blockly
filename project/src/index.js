@@ -299,6 +299,208 @@ const setupDeletionStream = () => {
 // Start the SSE connection
 setupDeletionStream();
 
+// Set up SSE connection for creation requests
+const setupCreationStream = () => {
+  const eventSource = new EventSource('http://127.0.0.1:7861/create_stream');
+  const processedRequests = new Set(); // Track processed creation requests
+  
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      
+      // Skip heartbeat messages
+      if (data.heartbeat) return;
+      
+      // Skip if we've already processed this request
+      if (data.request_id && processedRequests.has(data.request_id)) {
+        console.log('[SSE CREATE] Skipping duplicate creation request:', data.request_id);
+        return;
+      }
+      if (data.request_id) {
+        processedRequests.add(data.request_id);
+        // Clear after 10 seconds to allow retries if needed
+        setTimeout(() => processedRequests.delete(data.request_id), 10000);
+      }
+      
+      if (data.block_spec && data.request_id) {
+        console.log('[SSE CREATE] Received creation request:', data.request_id, data.block_spec);
+        
+        let success = false;
+        let error = null;
+        let blockId = null;
+        
+        try {
+          // Parse the block specification
+          // Expected format: "block_type(param1, param2, ...)"
+          const match = data.block_spec.match(/^(\w+)\s*\((.*)\)$/);
+          
+          if (!match) {
+            throw new Error(`Invalid block specification format: ${data.block_spec}`);
+          }
+          
+          const blockType = match[1];
+          const paramsStr = match[2].trim();
+          
+          // Create the block based on its type
+          let newBlock = null;
+          
+          switch (blockType) {
+            case 'print_text':
+              newBlock = ws.newBlock('print_text');
+              // Set the text value if provided
+              if (paramsStr) {
+                // Remove quotes from string parameters
+                const text = paramsStr.replace(/^["']|["']$/g, '');
+                newBlock.setFieldValue(text, 'TEXT');
+              }
+              break;
+              
+            case 'mcp_tool':
+              newBlock = ws.newBlock('mcp_tool');
+              // Parse tool name if provided
+              if (paramsStr) {
+                const toolName = paramsStr.replace(/^["']|["']$/g, '');
+                newBlock.setFieldValue(toolName, 'TOOL');
+              }
+              break;
+              
+            case 'text':
+              newBlock = ws.newBlock('text');
+              if (paramsStr) {
+                const text = paramsStr.replace(/^["']|["']$/g, '');
+                newBlock.setFieldValue(text, 'TEXT');
+              }
+              break;
+              
+            case 'math_number':
+              newBlock = ws.newBlock('math_number');
+              if (paramsStr) {
+                const num = parseFloat(paramsStr);
+                if (!isNaN(num)) {
+                  newBlock.setFieldValue(num, 'NUM');
+                }
+              }
+              break;
+              
+            case 'logic_boolean':
+              newBlock = ws.newBlock('logic_boolean');
+              if (paramsStr) {
+                const bool = paramsStr.toLowerCase() === 'true' ? 'TRUE' : 'FALSE';
+                newBlock.setFieldValue(bool, 'BOOL');
+              }
+              break;
+              
+            case 'logic_compare':
+              newBlock = ws.newBlock('logic_compare');
+              // Could parse operator if provided
+              break;
+              
+            case 'logic_operation':
+              newBlock = ws.newBlock('logic_operation');
+              // Could parse operator if provided  
+              break;
+              
+            case 'controls_if':
+              newBlock = ws.newBlock('controls_if');
+              break;
+              
+            case 'controls_whileUntil':
+              newBlock = ws.newBlock('controls_whileUntil');
+              break;
+              
+            case 'lists_create_with':
+              newBlock = ws.newBlock('lists_create_with');
+              break;
+              
+            case 'lists_create_empty':
+              newBlock = ws.newBlock('lists_create_empty');
+              break;
+              
+            default:
+              // Try to create as a generic block type
+              newBlock = ws.newBlock(blockType);
+              break;
+          }
+          
+          if (newBlock) {
+            // Initialize the block (renders it)
+            newBlock.initSvg();
+            
+            // Position it in a visible area
+            // Find a good position that doesn't overlap existing blocks
+            const existingBlocks = ws.getAllBlocks();
+            let x = 50;
+            let y = 50;
+            
+            // Simple positioning: stack new blocks vertically
+            if (existingBlocks.length > 0) {
+              const lastBlock = existingBlocks[existingBlocks.length - 1];
+              const lastPos = lastBlock.getRelativeToSurfaceXY();
+              y = lastPos.y + lastBlock.height + 20;
+            }
+            
+            newBlock.moveBy(x, y);
+            
+            // Render the block
+            newBlock.render();
+            
+            blockId = newBlock.id;
+            success = true;
+            console.log('[SSE CREATE] Successfully created block:', blockId, blockType);
+          } else {
+            throw new Error(`Failed to create block of type: ${blockType}`);
+          }
+          
+        } catch (e) {
+          error = e.toString();
+          console.error('[SSE CREATE] Error creating block:', e);
+        }
+        
+        // Send result back to backend immediately
+        console.log('[SSE CREATE] Sending creation result:', { 
+          request_id: data.request_id, 
+          success, 
+          error,
+          block_id: blockId 
+        });
+        
+        fetch('http://127.0.0.1:7861/creation_result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_id: data.request_id,
+            success: success,
+            error: error,
+            block_id: blockId
+          })
+        }).then(response => {
+          console.log('[SSE CREATE] Creation result sent successfully');
+        }).catch(err => {
+          console.error('[SSE CREATE] Error sending creation result:', err);
+        });
+      }
+    } catch (err) {
+      console.error('[SSE CREATE] Error processing message:', err);
+    }
+  };
+  
+  eventSource.onerror = (error) => {
+    console.error('[SSE CREATE] Connection error:', error);
+    // Reconnect after 5 seconds
+    setTimeout(() => {
+      console.log('[SSE CREATE] Attempting to reconnect...');
+      setupCreationStream();
+    }, 5000);
+  };
+  
+  eventSource.onopen = () => {
+    console.log('[SSE CREATE] Connected to creation stream');
+  };
+};
+
+// Start the creation SSE connection
+setupCreationStream();
+
 // Observe any size change to the blockly container
 const observer = new ResizeObserver(() => {
   Blockly.svgResize(ws);

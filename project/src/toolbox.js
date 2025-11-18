@@ -96,10 +96,6 @@ export const toolbox = {
           kind: 'block',
           type: 'logic_null',
         },
-        {
-          kind: 'block',
-          type: 'logic_ternary',
-        },
       ],
     },
     {

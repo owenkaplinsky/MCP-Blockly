@@ -24,6 +24,19 @@ latest_blockly_chat_code = ""
 deletion_queue = queue.Queue()
 deletion_results = {}
 
+# Queue for creation requests and results storage
+creation_queue = queue.Queue()
+creation_results = {}
+
+blocks_context = ""
+try:
+    file_path = os.path.join(os.path.dirname(__file__), "blocks.txt")
+    with open(file_path, "r", encoding="utf-8") as f:
+        blocks_context = f.read().strip()
+except Exception as e:
+    print(f"[WARN] Could not read blocks.txt: {e}")
+    blocks_context = "(No external block data available.)"
+
 # FastAPI App
 app = FastAPI()
 
@@ -200,9 +213,9 @@ def delete_block(block_id):
                 result = deletion_results.pop(block_id)
                 print(f"[DELETE RESULT] Received result for {block_id}: success={result.get('success')}, error={result.get('error')}")
                 if result["success"]:
-                    return f"Successfully deleted block {block_id}"
+                    return f"[TOOL] Successfully deleted block {block_id}"
                 else:
-                    return f"Failed to delete block {block_id}: {result.get('error', 'Unknown error')}"
+                    return f"[TOOL] Failed to delete block {block_id}: {result.get('error', 'Unknown error')}"
             time.sleep(check_interval)
         
         print(f"[DELETE TIMEOUT] No response received for block {block_id} after {timeout} seconds")
@@ -213,6 +226,124 @@ def delete_block(block_id):
         import traceback
         traceback.print_exc()
         return f"Error deleting block: {str(e)}"
+
+def create_block(block_spec):
+    """Create a block in the Blockly workspace"""
+    try:
+        print(f"[CREATE REQUEST] Attempting to create block: {block_spec}")
+        
+        # Generate a unique request ID
+        import uuid
+        request_id = str(uuid.uuid4())
+        
+        # Clear any old results for this request ID first
+        if request_id in creation_results:
+            creation_results.pop(request_id)
+        
+        # Add to creation queue
+        creation_queue.put({"request_id": request_id, "block_spec": block_spec})
+        print(f"[CREATE REQUEST] Added to queue with ID: {request_id}")
+        
+        # Wait for result with timeout
+        import time
+        timeout = 8  # 8 seconds timeout
+        start_time = time.time()
+        check_interval = 0.05  # Check more frequently
+        
+        while time.time() - start_time < timeout:
+            if request_id in creation_results:
+                result = creation_results.pop(request_id)
+                print(f"[CREATE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
+                if result["success"]:
+                    return f"[TOOL] Successfully created block: {result.get('block_id', 'unknown')}"
+                else:
+                    return f"[TOOL] Failed to create block: {result.get('error', 'Unknown error')}"
+            time.sleep(check_interval)
+        
+        print(f"[CREATE TIMEOUT] No response received for request {request_id} after {timeout} seconds")
+        return f"Timeout waiting for block creation confirmation"
+            
+    except Exception as e:
+        print(f"[CREATE ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error creating block: {str(e)}"
+
+# Server-Sent Events endpoint for creation requests
+@app.get("/create_stream")
+async def create_stream():
+    """Stream creation requests to the frontend using Server-Sent Events"""
+    
+    async def clear_sent_request(sent_requests, request_id, delay):
+        """Clear request_id from sent_requests after delay seconds"""
+        await asyncio.sleep(delay)
+        if request_id in sent_requests:
+            sent_requests.discard(request_id)
+    
+    async def event_generator():
+        sent_requests = set()  # Track sent requests to avoid duplicates
+        heartbeat_counter = 0
+        
+        while True:
+            try:
+                # Check for creation requests (non-blocking)
+                if not creation_queue.empty():
+                    creation_request = creation_queue.get_nowait()
+                    request_id = creation_request.get("request_id")
+                    
+                    # Avoid sending duplicate requests too quickly
+                    if request_id not in sent_requests:
+                        sent_requests.add(request_id)
+                        print(f"[SSE CREATE SEND] Sending creation request with ID: {request_id}")
+                        yield f"data: {json.dumps(creation_request)}\n\n"
+                        
+                        # Clear from sent_requests after 10 seconds
+                        asyncio.create_task(clear_sent_request(sent_requests, request_id, 10))
+                    else:
+                        print(f"[SSE CREATE SKIP] Skipping duplicate request for ID: {request_id}")
+                    
+                    await asyncio.sleep(0.1)  # Small delay between messages
+                else:
+                    # Send a heartbeat every 30 seconds to keep connection alive
+                    heartbeat_counter += 1
+                    if heartbeat_counter >= 300:  # 300 * 0.1 = 30 seconds
+                        yield f"data: {json.dumps({'heartbeat': True})}\n\n"
+                        heartbeat_counter = 0
+                    await asyncio.sleep(0.1)
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"[SSE CREATE ERROR] {e}")
+                await asyncio.sleep(1)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+# Endpoint to receive creation results from frontend
+@app.post("/creation_result")
+async def creation_result(request: Request):
+    """Receive creation results from the frontend"""
+    data = await request.json()
+    request_id = data.get("request_id")
+    success = data.get("success")
+    error = data.get("error")
+    block_id = data.get("block_id")
+    
+    print(f"[CREATION RESULT RECEIVED] request_id={request_id}, success={success}, error={error}, block_id={block_id}")
+    
+    if request_id:
+        # Store the result for the create_block function to retrieve
+        creation_results[request_id] = data
+        print(f"[CREATION RESULT STORED] Results dict now has {len(creation_results)} items")
+    
+    return {"received": True}
 
 # Server-Sent Events endpoint for deletion requests
 @app.get("/delete_stream")
@@ -291,7 +422,7 @@ async def deletion_result(request: Request):
 
 def create_gradio_interface():
     # Hardcoded system prompt
-    SYSTEM_PROMPT = """You are an AI assistant that helps users build **MCP servers** using Blockly blocks.  
+    SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.  
 MCP lets AI systems define tools with specific inputs and outputs that any LLM can call.
 
 You’ll receive the workspace state in this format:  
@@ -347,7 +478,44 @@ To delete one, end your message with:
 blockId
 ```
 
-You can delete any block except the main `create_mcp` block."""
+You can delete any block except the main `create_mcp` block.
+
+---
+
+### Creating Blocks
+You can create new blocks in the workspace.  
+To create a block, specify its type and parameters (if any).  
+End your message (and say nothing after) with:
+
+```create
+block_type(parameters)
+```
+
+Examples:
+- `print_text("Hello World")` - creates a print block with text
+- `text("some text")` - creates a text block
+- `math_number(42)` - creates a number block
+- `logic_boolean(true)` - creates a boolean block
+- `mcp_tool("tool_name")` - creates an MCP tool block
+- `controls_if()` - creates an if block
+- `lists_create_empty()` - creates an empty list block
+
+List of blocks:
+
+{blocks_context}
+
+---
+
+Additionally, if you ever send a message without a tool call, your response will end. So, if you want to
+call more tools after something you have to keep calling them. Any pause in tool callings ends the loop.
+
+REMEMBER, AS YOU SEE BELOW, THE NAME MUST BE DIRECTLY AFTER THE ``` AND CANNOT HAVE A NEW LINE IN BETWEEN
+THIS IS A REQUIREMENT. NAME MUST BE ON THE EXACT SAME LINE AS THE BACKTICKS.
+
+```name
+(arguments_here)
+```
+"""
     
     def chat_with_context(message, history):
         # Check if API key is set and create/update client
@@ -360,10 +528,12 @@ You can delete any block except the main `create_mcp` block."""
             try:
                 client = OpenAI(api_key=api_key)
             except Exception as e:
-                return f"Error initializing OpenAI client: {str(e)}"
+                yield f"Error initializing OpenAI client: {str(e)}"
+                return
         
         if not client or not api_key:
-            return "OpenAI API key not configured. Please set it in File > Settings in the Blockly interface."
+            yield "OpenAI API key not configured. Please set it in File > Settings in the Blockly interface."
+            return
         
         # Get the chat context from the global variable
         global latest_blockly_chat_code
@@ -416,14 +586,21 @@ You can delete any block except the main `create_mcp` block."""
                         'label': 'MCP',
                         'result_label': 'MCP Execution Result',
                         'handler': lambda content: execute_mcp(content),
-                        'next_prompt': "Please respond to the MCP execution result above and provide any relevant information to the user. If you need to run another MCP or delete code, you can do so."
+                        'next_prompt': "Please respond to the MCP execution result above and provide any relevant information to the user. If you need to run another MCP, delete, or create blocks, you can do so."
                     },
                     'delete': {
                         'pattern': r'```delete\n(.+?)\n```',
                         'label': 'DELETE',
                         'result_label': 'Delete Operation',
                         'handler': lambda content: delete_block(content.strip()),
-                        'next_prompt': "Please respond to the delete operation result above. If you need to run an MCP or delete more code, you can do so."
+                        'next_prompt': "Please respond to the delete operation result above. If you need to run an MCP, delete more code, or create blocks, you can do so."
+                    },
+                    'create': {
+                        'pattern': r'```create\n(.+?)\n```',
+                        'label': 'CREATE',
+                        'result_label': 'Create Operation',
+                        'handler': lambda content: create_block(content.strip()),
+                        'next_prompt': "Please respond to the create operation result above. If you need to run an MCP, delete code, or create more blocks, you can do so."
                     }
                 }
                 
@@ -440,17 +617,23 @@ You can delete any block except the main `create_mcp` block."""
                         
                         print(f"[{config['label']} DETECTED] Processing: {action_content}")
                         
+                        # Yield the displayed response first if it exists
+                        if displayed_response:
+                            if accumulated_response:
+                                accumulated_response += "\n\n"
+                            accumulated_response += displayed_response
+                            yield accumulated_response
+                        
                         # Execute the action
                         action_result = config['handler'](action_content)
                         
                         print(f"[{config['label']} RESULT] {action_result}")
                         
-                        # Add to accumulated response
+                        # Yield the action result
                         if accumulated_response:
                             accumulated_response += "\n\n"
-                        if displayed_response:
-                            accumulated_response += displayed_response + "\n\n"
                         accumulated_response += f"**{config['result_label']}:** {action_result}"
+                        yield accumulated_response
                         
                         # Update history for next iteration
                         temp_history.append({"role": "user", "content": current_prompt})
@@ -468,19 +651,20 @@ You can delete any block except the main `create_mcp` block."""
                     if accumulated_response:
                         accumulated_response += "\n\n"
                     accumulated_response += ai_response
+                    yield accumulated_response
                     break
                     
             except Exception as e:
                 if accumulated_response:
-                    return f"{accumulated_response}\n\nError in iteration {current_iteration}: {str(e)}"
+                    yield f"{accumulated_response}\n\nError in iteration {current_iteration}: {str(e)}"
                 else:
-                    return f"Error: {str(e)}"
+                    yield f"Error: {str(e)}"
+                return
         
         # If we hit max iterations, add a note
         if current_iteration >= max_iterations:
             accumulated_response += f"\n\n*(Reached maximum of {max_iterations} consecutive responses)*"
-        
-        return accumulated_response if accumulated_response else "No response generated"
+            yield accumulated_response
     
     # Create the standard ChatInterface
     demo = gr.ChatInterface(
