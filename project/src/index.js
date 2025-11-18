@@ -208,6 +208,97 @@ cleanWorkspace.addEventListener("click", () => {
   ws.cleanUp();
 });
 
+// Set up SSE connection for deletion requests
+const setupDeletionStream = () => {
+  const eventSource = new EventSource('http://127.0.0.1:7861/delete_stream');
+  const processedRequests = new Set(); // Track processed deletion requests
+  
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      
+      // Skip heartbeat messages
+      if (data.heartbeat) return;
+      
+      // Skip if we've already processed this exact request
+      const requestKey = `${data.block_id}_${Date.now()}`;
+      if (data.block_id && processedRequests.has(data.block_id)) {
+        console.log('[SSE] Skipping duplicate deletion request for:', data.block_id);
+        return;
+      }
+      if (data.block_id) {
+        processedRequests.add(data.block_id);
+        // Clear after 10 seconds to allow retries if needed
+        setTimeout(() => processedRequests.delete(data.block_id), 10000);
+      }
+      
+      if (data.block_id) {
+        console.log('[SSE] Received deletion request for block:', data.block_id);
+        
+        // Try to delete the block
+        const block = ws.getBlockById(data.block_id);
+        let success = false;
+        let error = null;
+        
+        if (block) {
+          console.log('[SSE] Found block to delete:', block.type, block.id);
+          // Check if it's the main create_mcp block (which shouldn't be deleted)
+          if (block.type === 'create_mcp' && !block.isDeletable()) {
+            error = 'Cannot delete the main create_mcp block';
+            console.log('[SSE] Block is protected create_mcp');
+          } else {
+            try {
+              block.dispose(true);
+              success = true;
+              console.log('[SSE] Successfully deleted block:', data.block_id);
+            } catch (e) {
+              error = e.toString();
+              console.error('[SSE] Error deleting block:', e);
+            }
+          }
+        } else {
+          error = 'Block not found';
+          console.log('[SSE] Block not found:', data.block_id);
+        }
+        
+        // Send result back to backend immediately
+        console.log('[SSE] Sending deletion result:', { block_id: data.block_id, success, error });
+        fetch('http://127.0.0.1:7861/deletion_result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            block_id: data.block_id,
+            success: success,
+            error: error
+          })
+        }).then(response => {
+          console.log('[SSE] Deletion result sent successfully');
+        }).catch(err => {
+          console.error('[SSE] Error sending deletion result:', err);
+        });
+      }
+    } catch (err) {
+      console.error('[SSE] Error processing message:', err);
+    }
+  };
+  
+  eventSource.onerror = (error) => {
+    console.error('[SSE] Connection error:', error);
+    // Reconnect after 5 seconds
+    setTimeout(() => {
+      console.log('[SSE] Attempting to reconnect...');
+      setupDeletionStream();
+    }, 5000);
+  };
+  
+  eventSource.onopen = () => {
+    console.log('[SSE] Connected to deletion stream');
+  };
+};
+
+// Start the SSE connection
+setupDeletionStream();
+
 // Observe any size change to the blockly container
 const observer = new ResizeObserver(() => {
   Blockly.svgResize(ws);

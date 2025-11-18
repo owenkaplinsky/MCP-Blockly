@@ -70,7 +70,8 @@ forBlock['create_mcp'] = function (block, generator) {
   let body = generator.statementToCode(block, 'BODY');
 
   // Construct the create_mcp call with inputs and outputs
-  let code = `create_mcp(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))\n`;
+  // Include block ID for deletion tracking with pipe separator
+  let code = `${block.id} | create_mcp(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))`
 
   // Add the function body
   if (body) {
@@ -119,7 +120,8 @@ forBlock['func_def'] = function (block, generator) {
   let body = generator.statementToCode(block, 'BODY');
 
   // Construct the func_def call with inputs and outputs
-  let code = `${name}(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))\n`;
+  // Include block ID for deletion tracking with pipe separator
+  let code = `${block.id} | ${name}(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))`
 
   // Add the function body
   if (body) {
@@ -211,8 +213,8 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
       }
     }
     
-    // Generate the standard format: name(inputs(...))
-    const code = `${blockType}(inputs(${inputs.join(', ')}))`;
+    // Generate the standard format: name(inputs(...)) with block ID and pipe separator
+    const code = `${block.id} | ${blockType}(inputs(${inputs.join(', ')}))`;
     
     // Handle statement inputs (for blocks that have a body)
     let statements = '';
@@ -228,7 +230,9 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
     // Return appropriate format based on whether it's a value or statement block
     if (block.outputConnection) {
       // This is a value block (can be plugged into inputs)
-      return [code, this.ORDER_ATOMIC];
+      // For value blocks, don't include the ID in the returned value
+      const valueCode = `${blockType}(inputs(${inputs.join(', ')}))`;
+      return [valueCode, this.ORDER_ATOMIC];
     } else {
       // This is a statement block (has prev/next connections)
       const fullCode = code + (statements ? '\n' + statements : '');

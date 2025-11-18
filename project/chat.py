@@ -3,9 +3,13 @@ import re
 import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from openai import OpenAI
 import uvicorn
 import gradio as gr
+import asyncio
+import queue
+import json
 
 # Initialize OpenAI client (will be updated when API key is set)
 client = None
@@ -15,6 +19,10 @@ stored_api_key = ""
 
 # Global variable to store the latest chat context
 latest_blockly_chat_code = ""
+
+# Queue for deletion requests and results storage
+deletion_queue = queue.Queue()
+deletion_results = {}
 
 # FastAPI App
 app = FastAPI()
@@ -27,7 +35,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Gets FAKE code, meant for the LLM only and is not valid Python
 @app.post("/update_chat")
 async def update_chat(request: Request):
     global latest_blockly_chat_code
@@ -169,36 +176,178 @@ def execute_mcp(mcp_call):
         traceback.print_exc()
         return f"Error executing MCP: {str(e)}"
 
+def delete_block(block_id):
+    """Delete a block from the Blockly workspace"""
+    try:
+        print(f"[DELETE REQUEST] Attempting to delete block: {block_id}")
+        
+        # Clear any old results for this block ID first
+        if block_id in deletion_results:
+            deletion_results.pop(block_id)
+        
+        # Add to deletion queue
+        deletion_queue.put({"block_id": block_id})
+        print(f"[DELETE REQUEST] Added to queue: {block_id}")
+        
+        # Wait for result with timeout
+        import time
+        timeout = 8  # Increased timeout to 8 seconds
+        start_time = time.time()
+        check_interval = 0.05  # Check more frequently
+        
+        while time.time() - start_time < timeout:
+            if block_id in deletion_results:
+                result = deletion_results.pop(block_id)
+                print(f"[DELETE RESULT] Received result for {block_id}: success={result.get('success')}, error={result.get('error')}")
+                if result["success"]:
+                    return f"Successfully deleted block {block_id}"
+                else:
+                    return f"Failed to delete block {block_id}: {result.get('error', 'Unknown error')}"
+            time.sleep(check_interval)
+        
+        print(f"[DELETE TIMEOUT] No response received for block {block_id} after {timeout} seconds")
+        return f"Timeout waiting for deletion confirmation for block {block_id}"
+            
+    except Exception as e:
+        print(f"[DELETE ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error deleting block: {str(e)}"
+
+# Server-Sent Events endpoint for deletion requests
+@app.get("/delete_stream")
+async def delete_stream():
+    """Stream deletion requests to the frontend using Server-Sent Events"""
+    
+    async def clear_sent_request(sent_requests, block_id, delay):
+        """Clear block_id from sent_requests after delay seconds"""
+        await asyncio.sleep(delay)
+        if block_id in sent_requests:
+            sent_requests.discard(block_id)
+    
+    async def event_generator():
+        sent_requests = set()  # Track sent requests to avoid duplicates
+        heartbeat_counter = 0
+        
+        while True:
+            try:
+                # Check for deletion requests (non-blocking)
+                if not deletion_queue.empty():
+                    deletion_request = deletion_queue.get_nowait()
+                    block_id = deletion_request.get("block_id")
+                    
+                    # Avoid sending duplicate requests too quickly
+                    if block_id not in sent_requests:
+                        sent_requests.add(block_id)
+                        print(f"[SSE SEND] Sending deletion request for block: {block_id}")
+                        yield f"data: {json.dumps(deletion_request)}\n\n"
+                        
+                        # Clear from sent_requests after 10 seconds
+                        asyncio.create_task(clear_sent_request(sent_requests, block_id, 10))
+                    else:
+                        print(f"[SSE SKIP] Skipping duplicate request for block: {block_id}")
+                    
+                    await asyncio.sleep(0.1)  # Small delay between messages
+                else:
+                    # Send a heartbeat every 30 seconds to keep connection alive
+                    heartbeat_counter += 1
+                    if heartbeat_counter >= 300:  # 300 * 0.1 = 30 seconds
+                        yield f"data: {json.dumps({'heartbeat': True})}\n\n"
+                        heartbeat_counter = 0
+                    await asyncio.sleep(0.1)
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"[SSE ERROR] {e}")
+                await asyncio.sleep(1)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+# Endpoint to receive deletion results from frontend
+@app.post("/deletion_result")
+async def deletion_result(request: Request):
+    """Receive deletion results from the frontend"""
+    data = await request.json()
+    block_id = data.get("block_id")
+    success = data.get("success")
+    error = data.get("error")
+    
+    print(f"[DELETION RESULT RECEIVED] block_id={block_id}, success={success}, error={error}")
+    
+    if block_id:
+        # Store the result for the delete_block function to retrieve
+        deletion_results[block_id] = data
+        print(f"[DELETION RESULT STORED] Results dict now has {len(deletion_results)} items")
+    
+    return {"received": True}
+
 def create_gradio_interface():
     # Hardcoded system prompt
-    SYSTEM_PROMPT = """You are an AI assistant created to help with Blockly MCP tasks. Users can create MCP (multi-context-protocol) servers
-by using premade Blockly blocks. MCP is a standardized tool method for AI systems, where it defines inputs and outputs and allows any LLM to
-call the custom made tool. You will receive the current state of the workspace in the next message. Here is the format for most blocks:
-`block_name(inputs(input_name: value))`. But, for `create_mcp` and `func_def`, they have their own format:
-`block_name(inputs(input_name: type), outputs(output_name: value))`. MCP and Func blocks are unique because they define custom functions
-or the MCP server itself. If a block is inside of another block (like code, rather than returning a value, such as a loop), it will be
-indented below a block with one tab. For `value`, a value returning block can be inside of another block, so you may see multiple blocks
-nested within each other.
+    SYSTEM_PROMPT = """You are an AI assistant that helps users build **MCP servers** using Blockly blocks.  
+MCP lets AI systems define tools with specific inputs and outputs that any LLM can call.
 
-Your goal is to help the user with coding questions and explicitly stay on topic. Note that the format `block_name... etc.` is made custom
-for you (the assistant) and is not visible to the user - so do not use this format when communicating with them.
+You’ll receive the workspace state in this format:  
+`blockId | block_name(inputs(input_name: value))`  
 
-When the user asks questions or talks about their project, don't talk like a robot. This means a few things:
-- Do not say "multi-context-protocol" just say MCP
-- When talking about their project, talk in natural language. Such as if they ask what their project is doing, don't say what the blocks
-are doing, state the goal or things. Remember, that info is just for you and you need to speak normally to the user.
+**Special cases:**  
+- `create_mcp` and `func_def` use  
+  `blockId | block_name(inputs(input_name: type), outputs(output_name: value))`  
+- Indentation or nesting shows logic hierarchy (like loops or conditionals).  
+- The `blockId` before the pipe `|` is each block’s unique identifier.
 
-Additionally, you have the ability to use the MCP yourself. Unlike normal OpenAI tools, you call this through chat. To do so, end your msg
-(you cannot say anything after this) with:
+---
 
-```mcp
+### Your job
+- Help users understand or fix their MCP logic in natural, human language.  
+- Never mention the internal block syntax or say “multi-context-protocol.” Just call it **MCP**.  
+- Focus on what the code *does* and what the user is trying to achieve, not on the raw block format.
+
+---
+
+### Using Tools
+Before using any tool, **explicitly plan** what you will do.  
+You can only use **one tool per message** - NEVER EVER combine multiple tool calls in one message.  
+If you need two actions, use two messages.  
+When you invoke a tool, it must be the **last thing in your message**.  
+
+To call a tool, use this exact format (no newline after the opening backticks):
+
+```name
+(arguments_here)
+```
+
+---
+
+### Running MCPs
+You can execute MCPs directly.  
+End your message (and say nothing after) with:
+
+```run
 create_mcp(input_name=value)
 ```
 
-Where you define all the inputs with set values and don't say outputs. And also notice how it doesn't say inputs(). This is just normal
-Python code, not the special syntax.
+Use plain Python-style arguments (no `inputs()` wrapper).  
+That’s how you actually run the MCP.
 
-So, if the user asks you to run the MCP, YOU HAVE THE ABILITY TO. DO NOT SAY THAT YOU CANNOT."""
+---
+
+### Deleting Blocks
+Each block starts with its ID, like `blockId | block_name(...)`.  
+To delete one, end your message with:
+
+```delete
+blockId
+```
+
+You can delete any block except the main `create_mcp` block."""
     
     def chat_with_context(message, history):
         # Check if API key is set and create/update client
@@ -236,68 +385,102 @@ So, if the user asks you to run the MCP, YOU HAVE THE ABILITY TO. DO NOT SAY THA
         else:
             full_system_prompt += "\n\nNote: No Blockly workspace context is currently available."
 
-        try:
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": full_system_prompt},
-                    *full_history,
-                    {"role": "user", "content": message}
-                ]
-            )
+        # Allow up to 5 consecutive messages from the agent
+        accumulated_response = ""
+        max_iterations = 5
+        current_iteration = 0
+        
+        # Start with the user's original message
+        current_prompt = message
+        temp_history = full_history.copy()
+        
+        while current_iteration < max_iterations:
+            current_iteration += 1
             
-            ai_response = response.choices[0].message.content
-            
-            # Check if the response contains ```mcp code block
-            mcp_pattern = r'```mcp\n(.+?)\n```'
-            mcp_match = re.search(mcp_pattern, ai_response, re.DOTALL)
-            
-            if mcp_match:
-                # Extract MCP call
-                mcp_call = mcp_match.group(1)
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": full_system_prompt},
+                        *temp_history,
+                        {"role": "user", "content": current_prompt}
+                    ]
+                )
                 
-                # Filter out the MCP block from the displayed message
-                displayed_response = ai_response[:mcp_match.start()].rstrip()
+                ai_response = response.choices[0].message.content
                 
-                print(f"[MCP DETECTED] Executing: {mcp_call}")
+                # Define action patterns and their handlers
+                action_patterns = {
+                    'run': {
+                        'pattern': r'```run\n(.+?)\n```',
+                        'label': 'MCP',
+                        'result_label': 'MCP Execution Result',
+                        'handler': lambda content: execute_mcp(content),
+                        'next_prompt': "Please respond to the MCP execution result above and provide any relevant information to the user. If you need to run another MCP or delete code, you can do so."
+                    },
+                    'delete': {
+                        'pattern': r'```delete\n(.+?)\n```',
+                        'label': 'DELETE',
+                        'result_label': 'Delete Operation',
+                        'handler': lambda content: delete_block(content.strip()),
+                        'next_prompt': "Please respond to the delete operation result above. If you need to run an MCP or delete more code, you can do so."
+                    }
+                }
                 
-                # Execute the MCP call
-                mcp_result = execute_mcp(mcp_call)
+                # Check for action blocks
+                action_found = False
+                for action_type, config in action_patterns.items():
+                    match = re.search(config['pattern'], ai_response, re.DOTALL)
+                    if match:
+                        action_found = True
+                        
+                        # Extract content and filter the action block from displayed message
+                        action_content = match.group(1)
+                        displayed_response = ai_response[:match.start()].rstrip()
+                        
+                        print(f"[{config['label']} DETECTED] Processing: {action_content}")
+                        
+                        # Execute the action
+                        action_result = config['handler'](action_content)
+                        
+                        print(f"[{config['label']} RESULT] {action_result}")
+                        
+                        # Add to accumulated response
+                        if accumulated_response:
+                            accumulated_response += "\n\n"
+                        if displayed_response:
+                            accumulated_response += displayed_response + "\n\n"
+                        accumulated_response += f"**{config['result_label']}:** {action_result}"
+                        
+                        # Update history for next iteration
+                        temp_history.append({"role": "user", "content": current_prompt})
+                        temp_history.append({"role": "assistant", "content": ai_response})
+                        temp_history.append({"role": "system", "content": f"{config['result_label']}: {action_result}"})
+                        
+                        # Set up next prompt
+                        current_prompt = config['next_prompt']
+                        break
                 
-                print(f"[MCP RESULT] {mcp_result}")
-                
-                # Add MCP execution to history for context
-                full_history.append({"role": "user", "content": message})
-                full_history.append({"role": "assistant", "content": ai_response})
-                full_history.append({"role": "system", "content": f"MCP execution result: {mcp_result}"})
-                
-                # Call GPT again with the MCP result
-                try:
-                    follow_up_response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": full_system_prompt},
-                            *full_history,
-                            {"role": "user", "content": "Please respond to the MCP execution result above and provide any relevant information to the user."}
-                        ]
-                    )
+                if action_found:
+                    continue
+                else:
+                    # No action blocks found, this is the final response
+                    if accumulated_response:
+                        accumulated_response += "\n\n"
+                    accumulated_response += ai_response
+                    break
                     
-                    # Combine the filtered initial response with the follow-up
-                    final_response = displayed_response
-                    if displayed_response:
-                        final_response += "\n\n"
-                    final_response += f"**MCP Execution Result:** {mcp_result}\n\n"
-                    final_response += follow_up_response.choices[0].message.content
-                    
-                    return final_response
-                except Exception as e:
-                    return f"{displayed_response}\n\n**MCP Execution Result:** {mcp_result}\n\nError generating follow-up: {str(e)}"
-            
-            # No MCP block found, return normal response
-            return ai_response
-            
-        except Exception as e:
-            return f"Error: {str(e)}"
+            except Exception as e:
+                if accumulated_response:
+                    return f"{accumulated_response}\n\nError in iteration {current_iteration}: {str(e)}"
+                else:
+                    return f"Error: {str(e)}"
+        
+        # If we hit max iterations, add a note
+        if current_iteration >= max_iterations:
+            accumulated_response += f"\n\n*(Reached maximum of {max_iterations} consecutive responses)*"
+        
+        return accumulated_response if accumulated_response else "No response generated"
     
     # Create the standard ChatInterface
     demo = gr.ChatInterface(
