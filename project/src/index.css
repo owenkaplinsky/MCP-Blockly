@@ -234,7 +234,7 @@ body {
 #chatContainer {
   background: #2c2c2c;
   border: none;
-  flex: 0 0 50%;
+  flex: 1;
   box-sizing: border-box;
   border-radius: 6px;
   overflow: hidden;
@@ -260,7 +260,21 @@ body {
 }
 
 /* Style the code area with matching margin and contrast */
-#generatedCode,
+#generatedCode {
+  display: none;
+  background: #1f1f1f;
+  color: #e0e7ff;
+  border-radius: 6px;
+  padding: 16px;
+  box-sizing: border-box;
+  flex: 1;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 #aichatCode {
   background: #1f1f1f;
   color: #e0e7ff;
@@ -277,6 +291,7 @@ body {
 
 /* --- Vertical Resizer --- */
 .verticalResizer {
+  display: none;
   height: 8px;
   background: #e5e7eb;
   cursor: row-resize;
