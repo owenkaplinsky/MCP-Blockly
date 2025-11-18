@@ -19,6 +19,7 @@ latest_blockly_code = ""
 stored_api_key = ""  # Store the API key in memory
 
 
+# Gets REAL Python code, not the LLM DSL
 @app.post("/update_code")
 async def update_code(request: Request):
     global latest_blockly_code
@@ -26,6 +27,13 @@ async def update_code(request: Request):
     latest_blockly_code = data.get("code", "")
     print("\n[FASTAPI] Updated Blockly code:\n", latest_blockly_code)
     return {"ok": True}
+
+# Sends the latest code to chat.py so that the agent will be able to use the MCP
+@app.get("/get_latest_code")
+async def get_latest_code():
+    """Return the latest Blockly-generated Python code for other services (like chat.py)"""
+    global latest_blockly_code
+    return {"code": latest_blockly_code}
 
 @app.get("/get_api_key")
 async def get_api_key_endpoint():
