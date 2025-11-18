@@ -330,125 +330,208 @@ const setupCreationStream = () => {
         let blockId = null;
         
         try {
-          // Parse the block specification
-          // Expected format: "block_type(param1, param2, ...)"
-          const match = data.block_spec.match(/^(\w+)\s*\((.*)\)$/);
-          
-          if (!match) {
-            throw new Error(`Invalid block specification format: ${data.block_spec}`);
-          }
-          
-          const blockType = match[1];
-          const paramsStr = match[2].trim();
-          
-          // Create the block based on its type
-          let newBlock = null;
-          
-          switch (blockType) {
-            case 'print_text':
-              newBlock = ws.newBlock('print_text');
-              // Set the text value if provided
-              if (paramsStr) {
-                // Remove quotes from string parameters
-                const text = paramsStr.replace(/^["']|["']$/g, '');
-                newBlock.setFieldValue(text, 'TEXT');
-              }
-              break;
+          // Parse and create blocks recursively
+          function parseAndCreateBlock(spec, shouldPosition = false) {
+            // Match block_name(inputs(...))
+            const blockMatch = spec.match(/^(\w+)\s*\((.+)\)$/s);
+            
+            if (!blockMatch) {
+              throw new Error(`Invalid block specification format: ${spec}`);
+            }
+            
+            const blockType = blockMatch[1];
+            const content = blockMatch[2].trim();
+            
+            console.log('[SSE CREATE] Parsing block:', blockType, 'with content:', content);
+            
+            // Check if this has inputs() wrapper
+            let inputsContent = content;
+            if (content.startsWith('inputs(') && content.endsWith(')')) {
+              inputsContent = content.slice(7, -1); // Remove 'inputs(' and ')'
+            }
+            
+            // Create the block
+            const newBlock = ws.newBlock(blockType);
+            
+            if (inputsContent) {
+              // Parse the inputs content
+              const inputs = parseInputs(inputsContent);
+              console.log('[SSE CREATE] Parsed inputs:', inputs);
               
-            case 'mcp_tool':
-              newBlock = ws.newBlock('mcp_tool');
-              // Parse tool name if provided
-              if (paramsStr) {
-                const toolName = paramsStr.replace(/^["']|["']$/g, '');
-                newBlock.setFieldValue(toolName, 'TOOL');
-              }
-              break;
-              
-            case 'text':
-              newBlock = ws.newBlock('text');
-              if (paramsStr) {
-                const text = paramsStr.replace(/^["']|["']$/g, '');
-                newBlock.setFieldValue(text, 'TEXT');
-              }
-              break;
-              
-            case 'math_number':
-              newBlock = ws.newBlock('math_number');
-              if (paramsStr) {
-                const num = parseFloat(paramsStr);
-                if (!isNaN(num)) {
-                  newBlock.setFieldValue(num, 'NUM');
+              // Set field values and connect child blocks
+              for (const [key, value] of Object.entries(inputs)) {
+                if (typeof value === 'string') {
+                  // Check if this is a nested block specification
+                  if (value.match(/^\w+\s*\(inputs\(/)) {
+                    // This is a nested block, create it recursively
+                    const childBlock = parseAndCreateBlock(value);
+                    
+                    // Connect the child block to the appropriate input
+                    const input = newBlock.getInput(key);
+                    if (input && input.connection) {
+                      childBlock.outputConnection.connect(input.connection);
+                    }
+                  } else {
+                    // This is a simple value, set it as a field
+                    // Remove quotes if present
+                    const cleanValue = value.replace(/^["']|["']$/g, '');
+                    
+                    // Try to set as a field value
+                    try {
+                      newBlock.setFieldValue(cleanValue, key);
+                    } catch (e) {
+                      console.log(`[SSE CREATE] Could not set field ${key} to ${cleanValue}:`, e);
+                    }
+                  }
+                } else if (typeof value === 'number') {
+                  // Set numeric field value
+                  try {
+                    newBlock.setFieldValue(value, key);
+                  } catch (e) {
+                    console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
+                  }
+                } else if (typeof value === 'boolean') {
+                  // Set boolean field value
+                  try {
+                    newBlock.setFieldValue(value ? 'TRUE' : 'FALSE', key);
+                  } catch (e) {
+                    console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
+                  }
                 }
               }
-              break;
-              
-            case 'logic_boolean':
-              newBlock = ws.newBlock('logic_boolean');
-              if (paramsStr) {
-                const bool = paramsStr.toLowerCase() === 'true' ? 'TRUE' : 'FALSE';
-                newBlock.setFieldValue(bool, 'BOOL');
-              }
-              break;
-              
-            case 'logic_compare':
-              newBlock = ws.newBlock('logic_compare');
-              // Could parse operator if provided
-              break;
-              
-            case 'logic_operation':
-              newBlock = ws.newBlock('logic_operation');
-              // Could parse operator if provided  
-              break;
-              
-            case 'controls_if':
-              newBlock = ws.newBlock('controls_if');
-              break;
-              
-            case 'controls_whileUntil':
-              newBlock = ws.newBlock('controls_whileUntil');
-              break;
-              
-            case 'lists_create_with':
-              newBlock = ws.newBlock('lists_create_with');
-              break;
-              
-            case 'lists_create_empty':
-              newBlock = ws.newBlock('lists_create_empty');
-              break;
-              
-            default:
-              // Try to create as a generic block type
-              newBlock = ws.newBlock(blockType);
-              break;
-          }
-          
-          if (newBlock) {
+            }
+            
             // Initialize the block (renders it)
             newBlock.initSvg();
             
-            // Position it in a visible area
-            // Find a good position that doesn't overlap existing blocks
-            const existingBlocks = ws.getAllBlocks();
-            let x = 50;
-            let y = 50;
-            
-            // Simple positioning: stack new blocks vertically
-            if (existingBlocks.length > 0) {
-              const lastBlock = existingBlocks[existingBlocks.length - 1];
-              const lastPos = lastBlock.getRelativeToSurfaceXY();
-              y = lastPos.y + lastBlock.height + 20;
+            // Only position the top-level block
+            if (shouldPosition) {
+              // Find a good position that doesn't overlap existing blocks
+              const existingBlocks = ws.getAllBlocks();
+              let x = 50;
+              let y = 50;
+              
+              // Simple positioning: stack new blocks vertically
+              if (existingBlocks.length > 0) {
+                const lastBlock = existingBlocks[existingBlocks.length - 1];
+                const lastPos = lastBlock.getRelativeToSurfaceXY();
+                y = lastPos.y + lastBlock.height + 20;
+              }
+              
+              newBlock.moveBy(x, y);
             }
-            
-            newBlock.moveBy(x, y);
             
             // Render the block
             newBlock.render();
             
+            return newBlock;
+          }
+          
+          // Helper function to parse inputs(key: value, key2: value2, ...)
+          function parseInputs(inputStr) {
+            const result = {};
+            let currentKey = '';
+            let currentValue = '';
+            let depth = 0;
+            let inQuotes = false;
+            let quoteChar = '';
+            let readingKey = true;
+            
+            for (let i = 0; i < inputStr.length; i++) {
+              const char = inputStr[i];
+              
+              // Handle quotes
+              if ((char === '"' || char === "'") && (i === 0 || inputStr[i-1] !== '\\')) {
+                if (!inQuotes) {
+                  inQuotes = true;
+                  quoteChar = char;
+                } else if (char === quoteChar) {
+                  inQuotes = false;
+                  quoteChar = '';
+                }
+              }
+              
+              // Handle parentheses depth (for nested blocks)
+              if (!inQuotes) {
+                if (char === '(') depth++;
+                else if (char === ')') depth--;
+              }
+              
+              // Handle key-value separation
+              if (char === ':' && depth === 0 && !inQuotes && readingKey) {
+                readingKey = false;
+                currentKey = currentKey.trim();
+                continue;
+              }
+              
+              // Handle comma separation
+              if (char === ',' && depth === 0 && !inQuotes && !readingKey) {
+                // Store the key-value pair
+                currentValue = currentValue.trim();
+                
+                // Parse the value
+                if (currentValue.match(/^\w+\s*\(inputs\(/)) {
+                  // This is a nested block
+                  result[currentKey] = currentValue;
+                } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
+                  // This is a number
+                  result[currentKey] = parseFloat(currentValue);
+                } else if (currentValue === 'true' || currentValue === 'false') {
+                  // This is a boolean
+                  result[currentKey] = currentValue === 'true';
+                } else {
+                  // This is a string (remove quotes if present)
+                  result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
+                }
+                
+                // Reset for next key-value pair
+                currentKey = '';
+                currentValue = '';
+                readingKey = true;
+                continue;
+              }
+              
+              // Accumulate characters
+              if (readingKey) {
+                currentKey += char;
+              } else {
+                currentValue += char;
+              }
+            }
+            
+            // Handle the last key-value pair
+            if (currentKey && currentValue) {
+              currentKey = currentKey.trim();
+              currentValue = currentValue.trim();
+              
+              // Parse the value
+              if (currentValue.match(/^\w+\s*\(inputs\(/)) {
+                // This is a nested block
+                result[currentKey] = currentValue;
+              } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
+                // This is a number
+                result[currentKey] = parseFloat(currentValue);
+              } else if (currentValue === 'true' || currentValue === 'false') {
+                // This is a boolean
+                result[currentKey] = currentValue === 'true';
+              } else {
+                // This is a string (remove quotes if present)
+                result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
+              }
+            }
+            
+            return result;
+          }
+          
+          // Create the block and all its nested children
+          const newBlock = parseAndCreateBlock(data.block_spec, true);
+          
+          if (newBlock) {
             blockId = newBlock.id;
             success = true;
-            console.log('[SSE CREATE] Successfully created block:', blockId, blockType);
+            console.log('[SSE CREATE] Successfully created block with children:', blockId, newBlock.type);
           } else {
-            throw new Error(`Failed to create block of type: ${blockType}`);
+            throw new Error(`Failed to create block from specification`);
           }
           
         } catch (e) {
@@ -570,6 +653,78 @@ const updateCode = () => {
     });
 };
 
+// Track if chat backend is available
+let chatBackendAvailable = false;
+let chatUpdateQueue = [];
+let chatRetryTimeout = null;
+
+// Function to check if chat backend is available
+const checkChatBackend = async () => {
+  try {
+    const response = await fetch("http://127.0.0.1:7861/update_chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "" }),
+    });
+    if (response.ok) {
+      chatBackendAvailable = true;
+      console.log("[Blockly] Chat backend is available");
+      // Process any queued updates
+      processChatUpdateQueue();
+      return true;
+    }
+  } catch (err) {
+    chatBackendAvailable = false;
+  }
+  return false;
+};
+
+// Process queued chat updates
+const processChatUpdateQueue = () => {
+  if (chatBackendAvailable && chatUpdateQueue.length > 0) {
+    const code = chatUpdateQueue.pop(); // Get the latest update
+    chatUpdateQueue = []; // Clear the queue
+    sendChatUpdate(code);
+  }
+};
+
+// Send chat update with retry logic
+const sendChatUpdate = async (code, retryCount = 0) => {
+  try {
+    const response = await fetch("http://127.0.0.1:7861/update_chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    
+    if (response.ok) {
+      chatBackendAvailable = true;
+      console.log("[Blockly] Sent updated Chat code to backend");
+    } else {
+      throw new Error(`Server responded with status ${response.status}`);
+    }
+  } catch (err) {
+    console.warn(`[Blockly] Chat backend not ready (attempt ${retryCount + 1}):`, err.message);
+    chatBackendAvailable = false;
+    
+    // Queue this update for retry
+    if (retryCount < 5) {
+      const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
+      setTimeout(() => {
+        if (!chatBackendAvailable) {
+          checkChatBackend().then(available => {
+            if (available) {
+              sendChatUpdate(code, retryCount + 1);
+            } else if (retryCount < 4) {
+              sendChatUpdate(code, retryCount + 1);
+            }
+          });
+        }
+      }, delay);
+    }
+  }
+};
+
 // Update function for the Chat generator (AI Chat tab)
 const updateChatCode = () => {
   let code = chatGenerator.workspaceToCode(ws);
@@ -582,16 +737,26 @@ const updateChatCode = () => {
     codeEl.textContent = code;
   }
 
-  // Send to the chat update endpoint
-  fetch("http://127.0.0.1:7861/update_chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  }).then(() => {
-    console.log("[Blockly] Sent updated Chat code to backend");
-  }).catch((err) => {
-    console.error("[Blockly] Error sending Chat code:", err);
-  });
+  // If backend is available, send immediately
+  if (chatBackendAvailable) {
+    sendChatUpdate(code);
+  } else {
+    // Queue the update and try to establish connection
+    chatUpdateQueue.push(code);
+    
+    // Clear any existing retry timeout
+    if (chatRetryTimeout) {
+      clearTimeout(chatRetryTimeout);
+    }
+    
+    // Try to connect to backend
+    checkChatBackend();
+    
+    // Set up periodic retry
+    chatRetryTimeout = setTimeout(() => {
+      checkChatBackend();
+    }, 2000);
+  }
 };
 
 try {
@@ -657,7 +822,18 @@ if (existingMcpBlocks.length === 0) {
 }
 
 updateCode();
-updateChatCode();
+
+// Check if chat backend is available before first update
+checkChatBackend().then(() => {
+  updateChatCode();
+});
+
+// Also set up periodic health checks for the chat backend
+setInterval(() => {
+  if (!chatBackendAvailable) {
+    checkChatBackend();
+  }
+}, 5000); // Check every 5 seconds if not connected
 
 ws.addChangeListener((e) => {
   if (e.isUiEvent) return;

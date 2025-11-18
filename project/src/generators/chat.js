@@ -143,6 +143,50 @@ forBlock['input_reference'] = function(block, generator) {
 // Register the forBlock definitions with the chat generator
 Object.assign(chatGenerator.forBlock, forBlock);
 
+// Override workspaceToCode to include standalone value blocks
+chatGenerator.workspaceToCode = function(workspace) {
+  if (!workspace) {
+    // Backwards compatibility from before there could be multiple workspaces.
+    console.warn('No workspace specified in workspaceToCode call.  Guessing.');
+    workspace = Blockly.getMainWorkspace();
+  }
+  let code = [];
+  const blocks = workspace.getTopBlocks(true);
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    // Process ALL top-level blocks, including value blocks
+    if (block.outputConnection) {
+      // This is a value block - check if it's connected
+      if (!block.outputConnection.isConnected()) {
+        // Standalone value block - get its code
+        const line = this.blockToCode(block, true);
+        if (Array.isArray(line)) {
+          // Value blocks return [code, order], extract just the code
+          const blockCode = line[0];
+          if (blockCode) {
+            code.push(blockCode);
+          }
+        } else if (line) {
+          code.push(line);
+        }
+      }
+    } else {
+      // Regular statement block
+      const line = this.blockToCode(block);
+      if (Array.isArray(line)) {
+        // Shouldn't happen for statement blocks, but handle it anyway
+        code.push(line[0]);
+      } else if (line) {
+        code.push(line);
+      }
+    }
+  }
+  code = code.join('\n');  // Blank line between each section.
+  // Strip trailing whitespace
+  code = code.replace(/\n\s*$/g, '\n');
+  return code;
+};
+
 // Override blockToCode to provide a catch-all handler
 const originalBlockToCode = chatGenerator.blockToCode.bind(chatGenerator);
 chatGenerator.blockToCode = function(block, opt_thisOnly) {
@@ -230,9 +274,20 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
     // Return appropriate format based on whether it's a value or statement block
     if (block.outputConnection) {
       // This is a value block (can be plugged into inputs)
-      // For value blocks, don't include the ID in the returned value
-      const valueCode = `${blockType}(inputs(${inputs.join(', ')}))`;
-      return [valueCode, this.ORDER_ATOMIC];
+      // Check if this block is connected to another block's input
+      const isConnectedToInput = block.outputConnection && block.outputConnection.isConnected();
+      
+      if (isConnectedToInput) {
+        // When used as input to another block, don't include the ID
+        const valueCode = `${blockType}(inputs(${inputs.join(', ')}))`;
+        return [valueCode, this.ORDER_ATOMIC];
+      } else {
+        // When standalone (not connected), include the ID
+        const standaloneCode = `${block.id} | ${blockType}(inputs(${inputs.join(', ')}))`;
+        // For standalone value blocks, we need to return them as statement-like
+        // but still maintain the value block return format for Blockly
+        return [standaloneCode, this.ORDER_ATOMIC];
+      }
     } else {
       // This is a statement block (has prev/next connections)
       const fullCode = code + (statements ? '\n' + statements : '');

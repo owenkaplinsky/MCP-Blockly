@@ -13,7 +13,7 @@ logic_operation(inputs(OP: "AND/OR", A: value, B: value))
 
 # Math
 math_number(inputs(NUM: value))
-math_arithmetic(inputs(OP: "ADD/MINUS/MULTIPLY/DIVIDE/POWER", A: value, B: value))
+math_arithmetic(inputs(OP: "ADD/MINUS/MULTIPLY/DIVIDE/POWER", A: value, B: value)) // A and B are required. They must be blocks, so you need to add math_number or an alternative
 
 # Text
 text(inputs(TEXT: value))

@@ -457,9 +457,8 @@ To call a tool, use this exact format (no newline after the opening backticks):
 
 ---
 
-### Running MCPs
-You can execute MCPs directly.  
-End your message (and say nothing after) with:
+### Running MCP
+You can execute the MCP directly:
 
 ```run
 create_mcp(input_name=value)
@@ -480,6 +479,15 @@ blockId
 
 You can delete any block except the main `create_mcp` block.
 
+Remember, you give the blockId. Never put the code for it!
+You can see the ID to the left of each block it will be a jarble of characters
+looking something like:
+
+`blockId | code`
+
+Each block has its own ID, and you need to use the ID specifically from
+the correct block.
+
 ---
 
 ### Creating Blocks
@@ -488,17 +496,16 @@ To create a block, specify its type and parameters (if any).
 End your message (and say nothing after) with:
 
 ```create
-block_type(parameters)
+block_name(inputs(value_name: value))
 ```
 
-Examples:
-- `print_text("Hello World")` - creates a print block with text
-- `text("some text")` - creates a text block
-- `math_number(42)` - creates a number block
-- `logic_boolean(true)` - creates a boolean block
-- `mcp_tool("tool_name")` - creates an MCP tool block
-- `controls_if()` - creates an if block
-- `lists_create_empty()` - creates an empty list block
+If you want to create a block inside of a block, do it like this:
+
+```create
+block_name(inputs(value_name: block_name2(inputs(value_name2: value))))
+```
+
+Where you specify inputs() per block, even if it's inside of another block.
 
 List of blocks:
 
@@ -506,15 +513,15 @@ List of blocks:
 
 ---
 
+Remember, this is not the standard tool format. You must follow the one outlined above.
+
+Never say that you are going to run a tool and don't run it. You need to put tool calls in the same
+message or your messages will end (see below).
+
 Additionally, if you ever send a message without a tool call, your response will end. So, if you want to
 call more tools after something you have to keep calling them. Any pause in tool callings ends the loop.
 
-REMEMBER, AS YOU SEE BELOW, THE NAME MUST BE DIRECTLY AFTER THE ``` AND CANNOT HAVE A NEW LINE IN BETWEEN
-THIS IS A REQUIREMENT. NAME MUST BE ON THE EXACT SAME LINE AS THE BACKTICKS.
-
-```name
-(arguments_here)
-```
+For deleting blocks, don't forget that you use the **blockId** and **not** the code for it.
 """
     
     def chat_with_context(message, history):
@@ -569,7 +576,7 @@ THIS IS A REQUIREMENT. NAME MUST BE ON THE EXACT SAME LINE AS THE BACKTICKS.
             
             try:
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o-2024-08-06",
                     messages=[
                         {"role": "system", "content": full_system_prompt},
                         *temp_history,
@@ -582,21 +589,21 @@ THIS IS A REQUIREMENT. NAME MUST BE ON THE EXACT SAME LINE AS THE BACKTICKS.
                 # Define action patterns and their handlers
                 action_patterns = {
                     'run': {
-                        'pattern': r'```run\n(.+?)\n```',
+                        'pattern': r'```(?:\n)?run\n(.+?)\n```',
                         'label': 'MCP',
                         'result_label': 'MCP Execution Result',
                         'handler': lambda content: execute_mcp(content),
                         'next_prompt': "Please respond to the MCP execution result above and provide any relevant information to the user. If you need to run another MCP, delete, or create blocks, you can do so."
                     },
                     'delete': {
-                        'pattern': r'```delete\n(.+?)\n```',
+                        'pattern': r'```(?:\n)?delete\n(.+?)\n```',
                         'label': 'DELETE',
                         'result_label': 'Delete Operation',
                         'handler': lambda content: delete_block(content.strip()),
                         'next_prompt': "Please respond to the delete operation result above. If you need to run an MCP, delete more code, or create blocks, you can do so."
                     },
                     'create': {
-                        'pattern': r'```create\n(.+?)\n```',
+                        'pattern': r'```(?:\n)?create\n(.+?)\n```',
                         'label': 'CREATE',
                         'result_label': 'Create Operation',
                         'handler': lambda content: create_block(content.strip()),
