@@ -142,8 +142,14 @@ settingsButton.addEventListener("click", () => {
 });
 
 saveApiKeyButton.addEventListener("click", () => {
-  const apiKey = apiKeyInput.value;
-  
+  const apiKey = apiKeyInput.value.trim();
+
+  // Validate OpenAI key format
+  if (!apiKey.startsWith("sk-") || apiKey.length < 40) {
+    alert("Invalid API key format. Please enter a valid OpenAI API key.");
+    return;
+  }
+
   // Save API key to both backend servers (test.py and chat.py)
   Promise.all([
     fetch("http://127.0.0.1:7860/set_api_key", {

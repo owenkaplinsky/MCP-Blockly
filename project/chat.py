@@ -422,64 +422,44 @@ async def deletion_result(request: Request):
 
 def create_gradio_interface():
     # Hardcoded system prompt
-    SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.  
+    SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
 MCP lets AI systems define tools with specific inputs and outputs that any LLM can call.
 
-You’ll receive the workspace state in this format:  
-`blockId | block_name(inputs(input_name: value))`  
+You’ll receive the workspace state in this format:
+`blockId | block_name(inputs(input_name: value))`
 
-**Special cases:**  
-- `create_mcp` and `func_def` use  
-  `blockId | block_name(inputs(input_name: type), outputs(output_name: value))`  
-- Indentation or nesting shows logic hierarchy (like loops or conditionals).  
+**Special cases:**
+- `create_mcp` and `func_def` use
+  `blockId | block_name(inputs(input_name: type), outputs(output_name: value))`
+- Indentation or nesting shows logic hierarchy (like loops or conditionals).
 - The `blockId` before the pipe `|` is each block’s unique identifier.
 
 ---
 
 ### Your job
-- Help users understand or fix their MCP logic in natural, human language.  
-- Never mention the internal block syntax or say “multi-context-protocol.” Just call it **MCP**.  
+- Help users understand or fix their MCP logic in natural, human language.
+- Never mention the internal block syntax or say “multi-context-protocol.” Just call it **MCP**.
 - Focus on what the code *does* and what the user is trying to achieve, not on the raw block format.
 
 ---
 
 ### Using Tools
-Before using any tool, **explicitly plan** what you will do.  
-You can only use **one tool per message** - NEVER EVER combine multiple tool calls in one message.  
-If you need two actions, use two messages.  
-When you invoke a tool, it must be the **last thing in your message**.  
-
-To call a tool, use this exact format (no newline after the opening backticks):
-
-```name
-(arguments_here)
+Before using any tool, **explicitly plan** what you will do.
+You can only use **one tool per message** - NEVER EVER combine multiple tool calls in one message.
+If you need two actions, use two messages.
 ```
 
 ---
 
 ### Running MCP
-You can execute the MCP directly:
-
-```run
-create_mcp(input_name=value)
-```
-
-Use plain Python-style arguments (no `inputs()` wrapper).  
-That’s how you actually run the MCP.
+You can execute the MCP directly and get the result back.
 
 ---
 
 ### Deleting Blocks
-Each block starts with its ID, like `blockId | block_name(...)`.  
+Each block starts with its ID, like `blockId | block_name(...)`.
 To delete one, end your message with:
-
-```delete
-blockId
-```
-
 You can delete any block except the main `create_mcp` block.
-
-Remember, you give the blockId. Never put the code for it!
 You can see the ID to the left of each block it will be a jarble of characters
 looking something like:
 
@@ -491,19 +471,12 @@ the correct block.
 ---
 
 ### Creating Blocks
-You can create new blocks in the workspace.  
-To create a block, specify its type and parameters (if any).  
-End your message (and say nothing after) with:
-
-```create
-block_name(inputs(value_name: value))
-```
+You can create new blocks in the workspace.
+To create a block, specify its type and parameters (if any).
 
 If you want to create a block inside of a block, do it like this:
 
-```create
 block_name(inputs(value_name: block_name2(inputs(value_name2: value))))
-```
 
 Where you specify inputs() per block, even if it's inside of another block.
 
@@ -511,18 +484,58 @@ List of blocks:
 
 {blocks_context}
 
----
-
-Remember, this is not the standard tool format. You must follow the one outlined above.
-
-Never say that you are going to run a tool and don't run it. You need to put tool calls in the same
-message or your messages will end (see below).
-
-Additionally, if you ever send a message without a tool call, your response will end. So, if you want to
-call more tools after something you have to keep calling them. Any pause in tool callings ends the loop.
-
-For deleting blocks, don't forget that you use the **blockId** and **not** the code for it.
+YOU CANNOT CREATE A MCP BLOCK OR EDIT ITS INPUTS. YOU MUST TELL THE USER TO DO SO.
 """
+    
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "delete_block",
+                "description": "Delete a single block using its ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "The ID of the block you're trying to delete.",
+                        },
+                    },
+                    "required": ["id"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_block",
+                "description": "Creates a single block that allows recursive nested blocks.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The create block command using the custom DSL format.",
+                        },
+                    },
+                    "required": ["command"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_mcp",
+                "description": "Runs the MCP with the given inputs. Create one parameter for each input that the user-created MCP allows.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": True
+                },
+            }
+        },
+    ]
     
     def chat_with_context(message, history):
         # Check if API key is set and create/update client
@@ -562,9 +575,9 @@ For deleting blocks, don't forget that you use the **blockId** and **not** the c
         else:
             full_system_prompt += "\n\nNote: No Blockly workspace context is currently available."
 
-        # Allow up to 5 consecutive messages from the agent
+        # Allow up to 10 consecutive messages from the agent
         accumulated_response = ""
-        max_iterations = 5
+        max_iterations = 10
         current_iteration = 0
         
         # Start with the user's original message
@@ -575,86 +588,85 @@ For deleting blocks, don't forget that you use the **blockId** and **not** the c
             current_iteration += 1
             
             try:
+                # Create the completion request with tools
                 response = client.chat.completions.create(
                     model="gpt-4o-2024-08-06",
                     messages=[
                         {"role": "system", "content": full_system_prompt},
                         *temp_history,
                         {"role": "user", "content": current_prompt}
-                    ]
+                    ],
+                    tools=tools,
+                    tool_choice="auto"  # Let the model decide whether to use tools
                 )
                 
-                ai_response = response.choices[0].message.content
+                response_message = response.choices[0].message
+                ai_response = response_message.content or ""
                 
-                # Define action patterns and their handlers
-                action_patterns = {
-                    'run': {
-                        'pattern': r'```(?:\n)?run\n(.+?)\n```',
-                        'label': 'MCP',
-                        'result_label': 'MCP Execution Result',
-                        'handler': lambda content: execute_mcp(content),
-                        'next_prompt': "Please respond to the MCP execution result above and provide any relevant information to the user. If you need to run another MCP, delete, or create blocks, you can do so."
-                    },
-                    'delete': {
-                        'pattern': r'```(?:\n)?delete\n(.+?)\n```',
-                        'label': 'DELETE',
-                        'result_label': 'Delete Operation',
-                        'handler': lambda content: delete_block(content.strip()),
-                        'next_prompt': "Please respond to the delete operation result above. If you need to run an MCP, delete more code, or create blocks, you can do so."
-                    },
-                    'create': {
-                        'pattern': r'```(?:\n)?create\n(.+?)\n```',
-                        'label': 'CREATE',
-                        'result_label': 'Create Operation',
-                        'handler': lambda content: create_block(content.strip()),
-                        'next_prompt': "Please respond to the create operation result above. If you need to run an MCP, delete code, or create more blocks, you can do so."
-                    }
-                }
-                
-                # Check for action blocks
-                action_found = False
-                for action_type, config in action_patterns.items():
-                    match = re.search(config['pattern'], ai_response, re.DOTALL)
-                    if match:
-                        action_found = True
-                        
-                        # Extract content and filter the action block from displayed message
-                        action_content = match.group(1)
-                        displayed_response = ai_response[:match.start()].rstrip()
-                        
-                        print(f"[{config['label']} DETECTED] Processing: {action_content}")
-                        
-                        # Yield the displayed response first if it exists
-                        if displayed_response:
-                            if accumulated_response:
-                                accumulated_response += "\n\n"
-                            accumulated_response += displayed_response
-                            yield accumulated_response
-                        
-                        # Execute the action
-                        action_result = config['handler'](action_content)
-                        
-                        print(f"[{config['label']} RESULT] {action_result}")
-                        
-                        # Yield the action result
+                # Check if the model wants to use tools
+                if response_message.tool_calls:
+                    # Display the AI's message before executing tools (if any)
+                    if ai_response:
                         if accumulated_response:
                             accumulated_response += "\n\n"
-                        accumulated_response += f"**{config['result_label']}:** {action_result}"
+                        accumulated_response += ai_response
                         yield accumulated_response
+                    
+                    # Process each tool call
+                    for tool_call in response_message.tool_calls:
+                        function_name = tool_call.function.name
+                        function_args = json.loads(tool_call.function.arguments)
                         
-                        # Update history for next iteration
-                        temp_history.append({"role": "user", "content": current_prompt})
-                        temp_history.append({"role": "assistant", "content": ai_response})
-                        temp_history.append({"role": "system", "content": f"{config['result_label']}: {action_result}"})
+                        print(f"[TOOL CALL] {function_name} with args: {function_args}")
                         
-                        # Set up next prompt
-                        current_prompt = config['next_prompt']
-                        break
-                
-                if action_found:
+                        # Execute the appropriate function
+                        tool_result = None
+                        result_label = ""
+                        
+                        if function_name == "delete_block":
+                            block_id = function_args.get("id", "")
+                            tool_result = delete_block(block_id)
+                            result_label = "Delete Operation"
+                            
+                        elif function_name == "create_block":
+                            command = function_args.get("command", "")
+                            tool_result = create_block(command)
+                            result_label = "Create Operation"
+                            
+                        elif function_name == "run_mcp":
+                            # Build the MCP call string from the arguments
+                            # run_mcp receives dynamic arguments based on the MCP's inputs
+                            params = []
+                            for key, value in function_args.items():
+                                # Format as key=value for execute_mcp
+                                params.append(f"{key}=\"{value}\"")
+                            mcp_call = f"create_mcp({', '.join(params)})"
+                            print(f"[MCP CALL] Executing: {mcp_call}")
+                            tool_result = execute_mcp(mcp_call)
+                            result_label = "MCP Execution Result"
+                        
+                        if tool_result:
+                            print(f"[TOOL RESULT] {tool_result}")
+                            
+                            # Yield the tool result
+                            if accumulated_response:
+                                accumulated_response += "\n\n"
+                            accumulated_response += f"**{result_label}:** {tool_result}"
+                            yield accumulated_response
+                            
+                            # Update history with the tool call and result
+                            temp_history.append({"role": "user", "content": current_prompt})
+                            temp_history.append({"role": "assistant", "content": ai_response, "tool_calls": response_message.tool_calls})
+                            temp_history.append({"role": "tool", "tool_call_id": tool_call.id, "content": tool_result})
+                            
+                            # Set up next prompt to have the model respond to the tool result
+                            current_prompt = f"The tool has been executed with the result shown above. Please respond appropriately to the user based on this result."
+                    
+                    # Continue to next iteration if tools were used
                     continue
+                    
                 else:
-                    # No action blocks found, this is the final response
+                    # No tool calls, this is a regular response
                     if accumulated_response:
                         accumulated_response += "\n\n"
                     accumulated_response += ai_response
