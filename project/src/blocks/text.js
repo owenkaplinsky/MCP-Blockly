@@ -130,18 +130,19 @@ Blockly.Extensions.registerMutator(
         // Check if we need to find existing reference blocks in the workspace
         // This happens after deserialization when the blocks exist but aren't tracked
         if (this.inputRefBlocks_.size === 0 && this.inputNames_ && this.inputNames_.length > 0) {
-          const allBlocks = this.workspace.getAllBlocks(false);
           for (let i = 0; i < this.inputNames_.length; i++) {
             const name = this.inputNames_[i];
-            const blockType = `input_reference_${name}`;
-            // Find orphaned reference blocks that belong to this block
-            const refBlock = allBlocks.find(b =>
-              b.type === blockType &&
-              b._ownerBlockId === this.id &&
-              !b.getParent()
-            );
-            if (refBlock) {
-              this.inputRefBlocks_.set(name, refBlock);
+            const input = this.getInput('X' + i);
+            
+            // Check if there's already a connected block in this input
+            if (input && input.connection && input.connection.targetBlock()) {
+              const connectedBlock = input.connection.targetBlock();
+              const expectedType = `input_reference_${name}`;
+              
+              // If this is the expected reference block, track it
+              if (connectedBlock.type === expectedType && connectedBlock._ownerBlockId === this.id) {
+                this.inputRefBlocks_.set(name, connectedBlock);
+              }
             }
           }
         }
@@ -309,8 +310,16 @@ Blockly.Extensions.registerMutator(
           this.moveInputBefore('X' + j, 'BODY');
 
           const blockType = createInputRefBlockType(name);
-          if (!existingRefBlock) {
-            // Only create a new reference block if none exists
+          
+          // Check if there's already a block connected to this input
+          const currentlyConnected = input.connection ? input.connection.targetBlock() : null;
+          
+          if (currentlyConnected && currentlyConnected.type === blockType) {
+            // There's already the correct reference block connected, just track it
+            currentlyConnected._ownerBlockId = this.id;
+            this.inputRefBlocks_.set(name, currentlyConnected);
+          } else if (!existingRefBlock) {
+            // Only create a new reference block if none exists and nothing is connected
             const refBlock = this.workspace.newBlock(blockType);
             refBlock.initSvg();
             refBlock.setDeletable(false);

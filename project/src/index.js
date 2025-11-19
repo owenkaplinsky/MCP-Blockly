@@ -784,39 +784,51 @@ const updateChatCode = () => {
 try {
   load(ws);
 
-  // After loading, create the reference blocks that should be in the inputs
+  // After loading, ensure reference blocks are properly connected and tracked
   setTimeout(() => {
     const mutatorBlocks = ws.getAllBlocks(false).filter(b =>
       (b.type === 'create_mcp' || b.type === 'func_def')
     );
 
     for (const block of mutatorBlocks) {
+      // Initialize the reference block map if needed
+      if (!block.inputRefBlocks_) {
+        block.inputRefBlocks_ = new Map();
+      }
+      
       // Create reference blocks for each input if they don't exist
       if (block.inputNames_ && block.inputNames_.length > 0) {
         for (let i = 0; i < block.inputNames_.length; i++) {
           const name = block.inputNames_[i];
           const input = block.getInput('X' + i);
 
-          // Only create if input exists AND has no connected block yet
-          if (input && input.connection && !input.connection.targetBlock()) {
-            // Create the reference block
-            const blockType = `input_reference_${name}`;
-            const refBlock = ws.newBlock(blockType);
-            refBlock.initSvg();
-            refBlock.setDeletable(false);
-            refBlock._ownerBlockId = block.id;
-            refBlock.render();
+          if (input && input.connection) {
+            const connectedBlock = input.connection.targetBlock();
+            const expectedType = `input_reference_${name}`;
+            
+            // If there's already the correct block connected, just track it
+            if (connectedBlock && connectedBlock.type === expectedType) {
+              connectedBlock._ownerBlockId = block.id;
+              connectedBlock.setDeletable(false);
+              block.inputRefBlocks_.set(name, connectedBlock);
+            } 
+            // Only create if input exists AND has no connected block yet
+            else if (!connectedBlock) {
+              // Create the reference block
+              const refBlock = ws.newBlock(expectedType);
+              refBlock.initSvg();
+              refBlock.setDeletable(false);
+              refBlock._ownerBlockId = block.id;
+              refBlock.render();
 
-            // Connect it
-            if (input.connection && refBlock.outputConnection) {
-              input.connection.connect(refBlock.outputConnection);
-            }
+              // Connect it
+              if (refBlock.outputConnection) {
+                input.connection.connect(refBlock.outputConnection);
+              }
 
-            // Track it
-            if (!block.inputRefBlocks_) {
-              block.inputRefBlocks_ = new Map();
+              // Track it
+              block.inputRefBlocks_.set(name, refBlock);
             }
-            block.inputRefBlocks_.set(name, refBlock);
           }
         }
       }
