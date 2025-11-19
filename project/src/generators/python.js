@@ -86,9 +86,9 @@ forBlock['create_mcp'] = function (block, generator) {
 
   // Create the main function definition
   if (typedInputs.length > 0) {
-    code += `def create_mcp(${typedInputs.join(', ')}):\n  out_amt = ${returnValues.length}\n\n${body}${returnStatement}\n`;
+    code += `def create_mcp(${typedInputs.join(', ')}):\n  out_amt = ${returnValues.length}\n  out_names = ${JSON.stringify(block.outputNames_ || [])}\n  out_types = ${JSON.stringify(block.outputTypes_ || [])}\n\n${body}${returnStatement}\n`;
   } else {
-    code += `def create_mcp():\n  out_amt = ${returnValues.length}\n\n${body || ''}${returnStatement}`;
+    code += `def create_mcp():\n  out_amt = ${returnValues.length}\n  out_names = ${JSON.stringify(block.outputNames_ || [])}\n  out_types = ${JSON.stringify(block.outputTypes_ || [])}\n\n${body || ''}${returnStatement}`;
   }
 
   // Map Python types to Gradio components for inputs

@@ -138,7 +138,7 @@ downloadCodeButton.addEventListener("click", () => {
     return;
   }
 
-  var filename = "mcp_generated.py";
+  var filename = "app.py";
   var element = document.createElement('a');
   
   element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(code));

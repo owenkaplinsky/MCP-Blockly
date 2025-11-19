@@ -2,8 +2,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import uvicorn
-import re
 import os
+import ast
 
 app = FastAPI()
 
@@ -141,17 +141,22 @@ def execute_blockly_logic(user_inputs):
 
                 anno = params[i].annotation
                 try:
-                    # Convert using the declared type hint
                     if anno == int:
                         typed_args.append(int(arg))
                     elif anno == float:
                         typed_args.append(float(arg))
                     elif anno == bool:
                         typed_args.append(str(arg).lower() in ("true", "1"))
+                    elif anno == list:
+                        try:
+                            # Convert string like '["a", "b", "c"]' into an actual list
+                            typed_args.append(ast.literal_eval(arg))
+                        except Exception:
+                            # If parsing fails, wrap it as a single-item list
+                            typed_args.append([arg])
                     elif anno == str or anno == inspect._empty:
                         typed_args.append(str(arg))
                     else:
-                        # Unknown or complex type — leave as-is
                         typed_args.append(arg)
                 except Exception:
                     # If conversion fails, pass the raw input
@@ -223,11 +228,30 @@ def build_interface():
             out_amt_match = re.search(r'out_amt\s*=\s*(\d+)', latest_blockly_code)
             out_amt = int(out_amt_match.group(1)) if out_amt_match else 0
 
+            out_names_match = re.search(r'out_names\s*=\s*(\[.*?\])', latest_blockly_code, re.DOTALL)
+            if out_names_match:
+                try:
+                    out_names = ast.literal_eval(out_names_match.group(1))
+                except Exception:
+                    out_names = []
+            else:
+                out_names = []
+
+            out_types_match = re.search(r'out_types\s*=\s*(\[.*?\])', latest_blockly_code, re.DOTALL)
+            if out_types_match:
+                try:
+                    out_types = ast.literal_eval(out_types_match.group(1))
+                except Exception:
+                    out_types = []
+            else:
+                out_types = []
+            out_types = ["str" if t == "string" else "int" if t == "integer" else t for t in out_types]
+
             # Update visibility + clear output fields
             output_updates = []
             for i, field in enumerate(output_fields):
                 if i < out_amt:
-                    output_updates.append(gr.update(visible=True, label=f"Output {i+1}", value=""))
+                    output_updates.append(gr.update(visible=True, label=f"{out_names[i]} ({out_types[i]})", value=""))
                 else:
                     output_updates.append(gr.update(visible=False, value=""))
 
@@ -236,9 +260,13 @@ def build_interface():
             for i, field in enumerate(input_fields):
                 if i < len(params):
                     param = params[i]
+                    note = ""
+                    if param["type"] == "list":
+                        note = "- (use like: [\"a\", \"b\", ...])"
+
                     updates.append(gr.update(
                         visible=True,
-                        label=f"{param['name']} ({param['type']})",
+                        label=f"{param['name']} ({param['type']}) {note}",
                         value=""
                     ))
                 else:
