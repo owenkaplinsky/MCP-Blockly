@@ -25,7 +25,7 @@ async def update_code(request: Request):
     global latest_blockly_code
     data = await request.json()
     latest_blockly_code = data.get("code", "")
-    print("\n[FASTAPI] Updated Blockly code:\n", latest_blockly_code)
+    print("\n[FASTAPI] Updated Blockly code")
     return {"ok": True}
 
 # Sends the latest code to chat.py so that the agent will be able to use the MCP

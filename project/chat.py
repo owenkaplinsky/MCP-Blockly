@@ -23,6 +23,9 @@ stored_api_key = ""
 # Global variable to store the latest chat context
 latest_blockly_chat_code = ""
 
+# Global variable to store the workspace's variables
+latest_blockly_vars = ""
+
 # Queue for deletion requests and results storage
 deletion_queue = queue.Queue()
 deletion_results = {}
@@ -57,10 +60,12 @@ app.add_middleware(
 
 @app.post("/update_chat")
 async def update_chat(request: Request):
-    global latest_blockly_chat_code
+    global latest_blockly_chat_code, latest_blockly_vars
     data = await request.json()
     latest_blockly_chat_code = data.get("code", "")
+    latest_blockly_vars = data.get("varString", "")
     print("\n[FASTAPI] Updated Blockly chat code:\n", latest_blockly_chat_code)
+    print("\n[FASTAPI] Updated Blockly variables:\n", latest_blockly_vars)
     return {"code": latest_blockly_chat_code}
 
 @app.post("/set_api_key_chat")
@@ -647,6 +652,12 @@ if you want it to be blank.
 When creating blocks, you are unable to put an outputting block inside of another block
 which already exists. If you are trying to nest input blocks, you must create them all
 in one call.
+
+### Variables
+
+You will be given the current variables that are in the workspace. Like the blocks, you will see:
+
+`varId | varName`
 """
     
     tools = [
@@ -741,6 +752,8 @@ in one call.
         # Get the chat context from the global variable
         global latest_blockly_chat_code
         context = latest_blockly_chat_code
+        global latest_blockly_vars
+        vars = latest_blockly_vars
         
         # Convert history to OpenAI format
         full_history = []
@@ -757,6 +770,11 @@ in one call.
             full_system_prompt += f"\n\nCurrent Blockly workspace state:\n{context}"
         else:
             full_system_prompt += "\n\nNote: No Blockly workspace context is currently available."
+
+        if vars != "":
+            full_system_prompt += f"\n\nCurrent Blockly variables:\n{vars}"
+        else:
+            full_system_prompt += "\n\nNote: No Blockly variables are currently available."
 
         # Allow up to 10 consecutive messages from the agent
         accumulated_response = ""

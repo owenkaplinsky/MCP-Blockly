@@ -876,6 +876,9 @@ const updateCode = () => {
     }
     // Ignore any other top-level blocks (stray blocks)
   }
+
+  const vars = ws.getVariableMap().getAllVariables();
+  globalVarString = vars.map(v => `${v.id} | ${v.name}`).join("\n");
   
   const codeEl = document.querySelector('#generatedCode code');
 
@@ -943,13 +946,20 @@ let chatBackendAvailable = false;
 let chatUpdateQueue = [];
 let chatRetryTimeout = null;
 
+// Global variables for chat code and variables
+let globalChatCode = '';
+let globalVarString = '';
+
 // Function to check if chat backend is available
 const checkChatBackend = async () => {
   try {
     const response = await fetch("http://127.0.0.1:7861/update_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: "" }),
+      body: JSON.stringify({
+        code: globalChatCode,
+        varString: globalVarString
+      }),
     });
     if (response.ok) {
       chatBackendAvailable = true;
@@ -974,12 +984,15 @@ const processChatUpdateQueue = () => {
 };
 
 // Send chat update with retry logic
-const sendChatUpdate = async (code, retryCount = 0) => {
+const sendChatUpdate = async (chatCode, retryCount = 0) => {
   try {
     const response = await fetch("http://127.0.0.1:7861/update_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ 
+        code: chatCode,
+        varString: globalVarString
+      }),
     });
     
     if (response.ok) {
@@ -999,9 +1012,9 @@ const sendChatUpdate = async (code, retryCount = 0) => {
         if (!chatBackendAvailable) {
           checkChatBackend().then(available => {
             if (available) {
-              sendChatUpdate(code, retryCount + 1);
+              sendChatUpdate(chatCode, retryCount + 1);
             } else if (retryCount < 4) {
-              sendChatUpdate(code, retryCount + 1);
+              sendChatUpdate(chatCode, retryCount + 1);
             }
           });
         }
@@ -1012,22 +1025,22 @@ const sendChatUpdate = async (code, retryCount = 0) => {
 
 // Update function for the Chat generator (AI Chat tab)
 const updateChatCode = () => {
-  let code = chatGenerator.workspaceToCode(ws);
+  globalChatCode = chatGenerator.workspaceToCode(ws);
   const codeEl = document.querySelector('#aichatCode code');
 
   // You can add any chat-specific preprocessing here
   // For example, adding headers or formatting
   
   if (codeEl) {
-    codeEl.textContent = code;
+    codeEl.textContent = globalChatCode;
   }
 
   // If backend is available, send immediately
   if (chatBackendAvailable) {
-    sendChatUpdate(code);
+    sendChatUpdate(globalChatCode);
   } else {
     // Queue the update and try to establish connection
-    chatUpdateQueue.push(code);
+    chatUpdateQueue.push(globalChatCode);
     
     // Clear any existing retry timeout
     if (chatRetryTimeout) {

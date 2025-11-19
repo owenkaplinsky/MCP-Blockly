@@ -2,9 +2,9 @@
 llm_call(inputs(MODEL: "gpt-3.5-turbo-0125/gpt-4o-2024-08-06/gpt-5-mini-2025-08-07/gpt-5-2025-08-07/gpt-4o-search-preview-2025-03-11", PROMPT: value))
 
 # JSON and API
-in_json(inputs(NAME: value, JSON: value)) // Name is the value you want to extract from the JSON
+in_json(inputs(NAME: value, JSON: value)) // NAME is the value you want to extract from the JSON
 make_json(inputs(KEYN: value, FIELDN: value)) // N starts at 0; you can make as many N as you want. Each key goes with one field
-call_api(inputs(METHOD: "GET/POST/PUT/DELETE", URL: value, HEADERS: value)) // Headers is optional
+call_api(inputs(METHOD: "GET/POST/PUT/DELETE", URL: value, HEADERS: value)) // HEADERS is optional
 
 # Logic
 controls_if(inputs(IFN: value)) // N starts at 0; you can make as many N as you want
@@ -17,6 +17,8 @@ logic_operation(inputs(OP: "AND/OR", A: value, B: value))
 # Loops
 controls_repeat_ext(inputs(TIMES: value))
 controls_whileUntil(inputs(MODE: "WHILE/UNTIL", BOOL: value))
+controls_for(inputs(VAR: value, FROM: value, TO: value, BY: value)) // VAR is a variable ID. BY is the increment amount
+controls_forEach(inputs(VAR: value), LIST: value) // VAR is a variable ID
 controls_flow_statements(inputs(FLOW: "CONTINUE/BREAK")) // Must go **inside** of a loop
 
 # Math
@@ -43,6 +45,12 @@ text_trim(inputs(MODE: "BOTH/LEFT/RIGHT", TEXT: value)) // Trim spaces from text
 # Lists
 lists_length(inputs(VALUE: value))
 lists_isEmpty(inputs(VALUE: value)) // Boolean output
+lists_indexOf(inputs(END: "FIRST/LAST", VALUE: value, FIND: value)) // VALUE is a variable ID
 lists_reverse(inputs(LIST: value))
 lists_create_with(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
 lists_sort(inputs(TYPE: "NUMERIC/TEXT/IGNORE_CASE", DIRECTION: "1/-1")) // For direction, 1 is ascending, -1 is descending
+
+# Variables
+variables_get(inputs(VAR: value)) // VAR is a variable ID
+variables_set(inputs(VAR: value, VALUE: value)) // VAR is a variable ID
+math_change(inputs(VAR: value, DELTA: value)) // VAR is a variable ID
