@@ -37,6 +37,7 @@ text_length(VALUE: value)
 text_join(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
 text_isEmpty(inputs(VALUE: value)) // Boolean output
 text_changeCase(inputs(CASE: "UPPERCASE/LOWERCASE/TITLECASE", TEXT: value))
+text_getSubstring(inputs(WHERE1: "FROM_START/FROM_END/FIRST", WHERE2: "FROM_START/FROM_END/FIRST", STRING: value, AT1: value, AT2: value)) // For AT1 and AT2, only use them if the associated WHEREN is not "FROM_START"
 text_reverse(inputs(TEXT: value))
 text_count(inputs(SUB: value, TEXT: value)) // Integer output
 text_replace(inputs(FROM: value, TO: value, TEXT: value))
@@ -45,7 +46,7 @@ text_trim(inputs(MODE: "BOTH/LEFT/RIGHT", TEXT: value)) // Trim spaces from text
 # Lists
 lists_length(inputs(VALUE: value))
 lists_isEmpty(inputs(VALUE: value)) // Boolean output
-lists_indexOf(inputs(END: "FIRST/LAST", VALUE: value, FIND: value)) // VALUE is a variable ID
+lists_indexOf(inputs(END: "FIRST/LAST", VALUE: value, FIND: value))
 lists_reverse(inputs(LIST: value))
 lists_create_with(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
 lists_sort(inputs(TYPE: "NUMERIC/TEXT/IGNORE_CASE", DIRECTION: "1/-1")) // For direction, 1 is ascending, -1 is descending

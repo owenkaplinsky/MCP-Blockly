@@ -388,13 +388,6 @@ export const toolbox = {
         {
           kind: 'block',
           type: 'text_getSubstring',
-          inputs: {
-            STRING: {
-              block: {
-                type: 'variables_get',
-              },
-            },
-          },
         },
         {
           kind: 'block',
@@ -494,46 +487,18 @@ export const toolbox = {
         {
           kind: 'block',
           type: 'lists_indexOf',
-          inputs: {
-            VALUE: {
-              block: {
-                type: 'variables_get',
-              },
-            },
-          },
         },
         {
           kind: 'block',
           type: 'lists_getIndex',
-          inputs: {
-            VALUE: {
-              block: {
-                type: 'variables_get',
-              },
-            },
-          },
         },
         {
           kind: 'block',
           type: 'lists_setIndex',
-          inputs: {
-            LIST: {
-              block: {
-                type: 'variables_get',
-              },
-            },
-          },
         },
         {
           kind: 'block',
           type: 'lists_getSublist',
-          inputs: {
-            LIST: {
-              block: {
-                type: 'variables_get',
-              },
-            },
-          },
         },
         {
           kind: 'block',
