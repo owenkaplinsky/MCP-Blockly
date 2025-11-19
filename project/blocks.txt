@@ -3,24 +3,46 @@ llm_call(inputs(MODEL: "gpt-3.5-turbo-0125/gpt-4o-2024-08-06/gpt-5-mini-2025-08-
 
 # JSON and API
 in_json(inputs(NAME: value, JSON: value)) // Name is the value you want to extract from the JSON
+make_json(inputs(KEYN: value, FIELDN: value)) // N starts at 0; you can make as many N as you want. Each key goes with one field
+call_api(inputs(METHOD: "GET/POST/PUT/DELETE", URL: value, HEADERS: value)) // Headers is optional
 
 # Logic
+controls_if(inputs(IFN: value)) // N starts at 0; you can make as many N as you want
 logic_negate(inputs())
 logic_boolean(inputs(BOOL: "TRUE/FALSE"))
 logic_null(inputs())
 logic_compare(inputs(OP: "EQ/NEQ/LT/LTE/GT/GTE", A: value, B: value))
 logic_operation(inputs(OP: "AND/OR", A: value, B: value))
 
+# Loops
+controls_repeat_ext(inputs(TIMES: value))
+controls_whileUntil(inputs(MODE: "WHILE/UNTIL", BOOL: value))
+controls_flow_statements(inputs(FLOW: "CONTINUE/BREAK")) // Must go **inside** of a loop
+
 # Math
 math_number(inputs(NUM: value))
 math_arithmetic(inputs(OP: "ADD/MINUS/MULTIPLY/DIVIDE/POWER", A: value, B: value)) // A and B are required. They must be blocks, so you need to add math_number or an alternative
+math_single(inputs(OP: "ROOT/ABS/NEG/LN/LOG10/EXP/POW10", NUM: value)) // EXP is e^num
+math_number_property(inputs(PROPERTY: "EVEN/ODD/PRIME/WHOLE/POSITIVE/NEGATIVE", NUMBER_TO_CHECK: value)) // Boolean output
+math_round(inputs(OP: "ROUND/ROUNDUP/ROUNDDOWN", NUM: value))
+math_modulo(inputs(DIVIDEND: value, DIVISOR: value))
+math_constrain(VALUE: value, LOW: value, HIGH: value)
+math_random_int(inputs(FROM: value, TO: value))
 
 # Text
 text(inputs(TEXT: value))
 text_length(VALUE: value)
 text_join(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
+text_isEmpty(inputs(VALUE: value)) // Boolean output
+text_changeCase(inputs(CASE: "UPPERCASE/LOWERCASE/TITLECASE", TEXT: value))
+text_reverse(inputs(TEXT: value))
+text_count(inputs(SUB: value, TEXT: value)) // Integer output
+text_replace(inputs(FROM: value, TO: value, TEXT: value))
+text_trim(inputs(MODE: "BOTH/LEFT/RIGHT", TEXT: value)) // Trim spaces from text
 
 # Lists
 lists_length(inputs(VALUE: value))
-lists_isEmpty(inputs(VALUE: value))
+lists_isEmpty(inputs(VALUE: value)) // Boolean output
 lists_reverse(inputs(LIST: value))
+lists_create_with(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
+lists_sort(inputs(TYPE: "NUMERIC/TEXT/IGNORE_CASE", DIRECTION: "1/-1")) // For direction, 1 is ascending, -1 is descending

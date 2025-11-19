@@ -247,7 +247,7 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
     // Then get all value inputs (connected blocks)
     const inputList = block.inputList || [];
     for (const input of inputList) {
-      if (input.type === Blockly.inputs.inputTypes.VALUE && input.connection) {
+      if (input.type === Blockly.INPUT_VALUE && input.connection) {
         const inputName = input.name;
         const inputValue = this.valueToCode(block, inputName, this.ORDER_ATOMIC);
         
@@ -263,7 +263,7 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
     // Handle statement inputs (for blocks that have a body)
     let statements = '';
     for (const input of inputList) {
-      if (input.type === Blockly.inputs.inputTypes.STATEMENT && input.connection) {
+      if (input.type === Blockly.NEXT_STATEMENT && input.connection) {
         const statementCode = this.statementToCode(block, input.name);
         if (statementCode) {
           statements += statementCode;

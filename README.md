@@ -10,7 +10,13 @@ The interface has three main areas. The canvas on the left is where you build by
 
 In the Development tab, you see your generated Python code alongside a test interface. The interface automatically creates input fields matching your tool's parameters. After you arrange your blocks, click Refresh to update the test interface, enter values, and click Submit to run your code. Results appear in the output fields.
 
-The AI Chat tab is the core feature of Agent-Blockly. It connects you to an AI assistant that understands your exact block configuration and can help you build, modify, and debug your workflows. You communicate in natural language. You can ask it to add validation to an input, fix a broken API call, restructure your logic, or explain what your current blocks do. The assistant reads your blocks, understands your intent, and can modify your workspace directly in real time. You can also ask it to run your tool with sample inputs to see how it behaves. The chat interface is not just for asking questions - it's an active collaborator that reshapes your blocks as you iterate on your design.
+The AI Chat tab is the centerpiece of Agent-Blockly. It connects you with an AI assistant that fully understands your current block configuration and helps you build, modify, and debug your workflows through natural language. You can ask it to add input validation, fix a broken API call, reorganize your logic, or explain how your blocks work.
+
+The assistant doesn’t just answer questions - it actively collaborates with you. It can edit your workspace in real time, run your tool with sample inputs, and show you how it behaves. It’s aware of your project’s structure and can make precise, context-aware changes as you iterate.
+
+The AI is capable of complex manipulations, such as inserting blocks inside others, creating nested structures, and arranging deeply recursive workflows.
+
+While it can handle a wide range of tasks, multi-step or highly complex changes work best when broken into smaller requests. Taking things one step at a time leads to more accurate and reliable results.
 
 The File menu handles creating new projects, opening existing ones, and downloading your work. You can download just the generated Python code or the entire project as a JSON file. The Edit menu provides standard undo, redo, and a cleanup button to reorganize blocks. The Examples menu includes pre-built projects you can load to understand how to structure your own. You need to set your OpenAI API key through Settings before the system can execute language model calls or power the chat.
 

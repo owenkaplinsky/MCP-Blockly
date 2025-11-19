@@ -1,8 +1,21 @@
 import { Order } from 'blockly/python';
+import * as Blockly from 'blockly';
 
 export const forBlock = Object.create(null);
 
 forBlock['create_mcp'] = function (block, generator) {
+  // Ensure the generator is properly initialized for nested blocks like loops
+  if (!generator.nameDB_) {
+    generator.nameDB_ = new Blockly.Names(generator.RESERVED_WORDS_ || []);
+  }
+  
+  // Ensure getDistinctName is available for control flow blocks
+  if (!generator.getDistinctName) {
+    generator.getDistinctName = function(name, type) {
+      return this.nameDB_.getDistinctName(name, type);
+    };
+  }
+  
   const typedInputs = [];
   let i = 0;
 
@@ -138,6 +151,18 @@ demo.launch(mcp_server=True)
 };
 
 forBlock['func_def'] = function (block, generator) {
+  // Ensure the generator is properly initialized for nested blocks like loops
+  if (!generator.nameDB_) {
+    generator.nameDB_ = new Blockly.Names(generator.RESERVED_WORDS_ || []);
+  }
+  
+  // Ensure getDistinctName is available for control flow blocks
+  if (!generator.getDistinctName) {
+    generator.getDistinctName = function(name, type) {
+      return this.nameDB_.getDistinctName(name, type);
+    };
+  }
+  
   const name = block.getFieldValue('NAME');
   const typedInputs = [];
   let i = 0;

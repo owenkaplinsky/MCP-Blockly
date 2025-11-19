@@ -9,6 +9,37 @@ import '@blockly/toolbox-search';
 import DarkTheme from '@blockly/theme-dark';
 import './index.css';
 
+// Initialize the Python generator's Names database if it doesn't exist
+if (!pythonGenerator.nameDB_) {
+  pythonGenerator.init = function(workspace) {
+    // Call parent init if it exists
+    if (Blockly.Generator.prototype.init) {
+      Blockly.Generator.prototype.init.call(this, workspace);
+    }
+    
+    // Initialize the Names database for variable name generation
+    if (!this.nameDB_) {
+      this.nameDB_ = new Blockly.Names(this.RESERVED_WORDS_);
+    } else {
+      this.nameDB_.reset();
+    }
+    
+    // Add reserved Python keywords
+    const reservedWords = ['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 
+                          'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
+                          'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 
+                          'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return',
+                          'try', 'while', 'with', 'yield'];
+    
+    for (const word of reservedWords) {
+      this.nameDB_.setVariableMap(word, word);
+    }
+    
+    // Initialize function name database
+    this.functionNames_ = this.nameDB_;
+  };
+}
+
 // Register the blocks and generator with Blockly
 Blockly.common.defineBlocks(blocks);
 Object.assign(pythonGenerator.forBlock, forBlock);
@@ -364,44 +395,107 @@ const setupCreationStream = () => {
               const inputs = parseInputs(inputsContent);
               console.log('[SSE CREATE] Parsed inputs:', inputs);
               
-              // Set field values and connect child blocks
-              for (const [key, value] of Object.entries(inputs)) {
-                if (typeof value === 'string') {
-                  // Check if this is a nested block specification
-                  if (value.match(/^\w+\s*\(inputs\(/)) {
-                    // This is a nested block, create it recursively
-                    const childBlock = parseAndCreateBlock(value);
+              // Special handling for make_json block
+              if (blockType === 'make_json') {
+                // Count FIELD entries to determine how many fields we need
+                let fieldCount = 0;
+                const fieldValues = {};
+                const keyValues = {};
+                
+                for (const [key, value] of Object.entries(inputs)) {
+                  const fieldMatch = key.match(/^FIELD(\d+)$/);
+                  const keyMatch = key.match(/^KEY(\d+)$/);
+                  
+                  if (fieldMatch) {
+                    const index = parseInt(fieldMatch[1]);
+                    fieldCount = Math.max(fieldCount, index + 1);
+                    fieldValues[index] = value;
+                  } else if (keyMatch) {
+                    const index = parseInt(keyMatch[1]);
+                    keyValues[index] = value;
+                  }
+                }
+                
+                // Set up the mutator state
+                if (fieldCount > 0) {
+                  newBlock.fieldCount_ = fieldCount;
+                  newBlock.fieldKeys_ = [];
+                  
+                  // Create the inputs through the mutator
+                  for (let i = 0; i < fieldCount; i++) {
+                    const keyValue = keyValues[i];
+                    const key = (typeof keyValue === 'string' && !keyValue.match(/^\w+\s*\(inputs\(/)) 
+                      ? keyValue.replace(/^["']|["']$/g, '') 
+                      : `key${i}`;
                     
-                    // Connect the child block to the appropriate input
-                    const input = newBlock.getInput(key);
-                    if (input && input.connection) {
-                      childBlock.outputConnection.connect(input.connection);
+                    newBlock.fieldKeys_[i] = key;
+                    
+                    // Create the input
+                    const input = newBlock.appendValueInput('FIELD' + i);
+                    const field = new Blockly.FieldTextInput(key);
+                    field.setValidator((newValue) => {
+                      newBlock.fieldKeys_[i] = newValue || `key${i}`;
+                      return newValue;
+                    });
+                    input.appendField(field, 'KEY' + i);
+                    input.appendField(':');
+                  }
+                  
+                  // Now connect the field values
+                  for (let i = 0; i < fieldCount; i++) {
+                    const value = fieldValues[i];
+                    if (value && typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
+                      // This is a nested block, create it recursively
+                      const childBlock = parseAndCreateBlock(value);
+                      
+                      // Connect the child block to the FIELD input
+                      const input = newBlock.getInput('FIELD' + i);
+                      if (input && input.connection && childBlock.outputConnection) {
+                        childBlock.outputConnection.connect(input.connection);
+                      }
                     }
-                  } else {
-                    // This is a simple value, set it as a field
-                    // Remove quotes if present
-                    const cleanValue = value.replace(/^["']|["']$/g, '');
-                    
-                    // Try to set as a field value
+                  }
+                }
+              } else {
+                // Normal block handling
+                for (const [key, value] of Object.entries(inputs)) {
+                  if (typeof value === 'string') {
+                    // Check if this is a nested block specification
+                    if (value.match(/^\w+\s*\(inputs\(/)) {
+                      // This is a nested block, create it recursively
+                      const childBlock = parseAndCreateBlock(value);
+                      
+                      // Connect the child block to the appropriate input
+                      const input = newBlock.getInput(key);
+                      if (input && input.connection && childBlock.outputConnection) {
+                        childBlock.outputConnection.connect(input.connection);
+                      }
+                    } else {
+                      // This is a simple value, set it as a field
+                      // Remove quotes if present
+                      const cleanValue = value.replace(/^["']|["']$/g, '');
+                      
+                      // Try to set as a field value
+                      try {
+                        newBlock.setFieldValue(cleanValue, key);
+                      } catch (e) {
+                        console.log(`[SSE CREATE] Could not set field ${key} to ${cleanValue}:`, e);
+                      }
+                    }
+                  } else if (typeof value === 'number') {
+                    // Set numeric field value
                     try {
-                      newBlock.setFieldValue(cleanValue, key);
+                      newBlock.setFieldValue(value, key);
                     } catch (e) {
-                      console.log(`[SSE CREATE] Could not set field ${key} to ${cleanValue}:`, e);
+                      console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
                     }
-                  }
-                } else if (typeof value === 'number') {
-                  // Set numeric field value
-                  try {
-                    newBlock.setFieldValue(value, key);
-                  } catch (e) {
-                    console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
-                  }
-                } else if (typeof value === 'boolean') {
-                  // Set boolean field value
-                  try {
-                    newBlock.setFieldValue(value ? 'TRUE' : 'FALSE', key);
-                  } catch (e) {
-                    console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
+                  } else if (typeof value === 'boolean') {
+                    // Set boolean field value
+                    try {
+                      newBlock.setFieldValue(value ? 'TRUE' : 'FALSE', key);
+                    } catch (e) {
+                      console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
+                    }
                   }
                 }
               }
@@ -534,6 +628,71 @@ const setupCreationStream = () => {
           
           if (newBlock) {
             blockId = newBlock.id;
+            
+            // If under_block_id is specified, attach the new block under the parent
+            if (data.under_block_id) {
+              const parentBlock = ws.getBlockById(data.under_block_id);
+              if (parentBlock) {
+                console.log('[SSE CREATE] Attaching to parent block:', data.under_block_id);
+                
+                // Find an appropriate input to connect to
+                // Try common statement inputs first
+                const statementInputs = ['BODY', 'DO', 'THEN', 'ELSE', 'STACK'];
+                let connected = false;
+                
+                for (const inputName of statementInputs) {
+                  const input = parentBlock.getInput(inputName);
+                  if (input && input.type === Blockly.NEXT_STATEMENT) {
+                    // Check if something is already connected
+                    if (input.connection && !input.connection.targetBlock()) {
+                      // Connect directly
+                      if (newBlock.previousConnection) {
+                        input.connection.connect(newBlock.previousConnection);
+                        connected = true;
+                        console.log('[SSE CREATE] Connected to input:', inputName);
+                        break;
+                      }
+                    } else if (input.connection && input.connection.targetBlock()) {
+                      // Find the last block in the stack
+                      let lastBlock = input.connection.targetBlock();
+                      while (lastBlock.nextConnection && lastBlock.nextConnection.targetBlock()) {
+                        lastBlock = lastBlock.nextConnection.targetBlock();
+                      }
+                      // Connect to the end of the stack
+                      if (lastBlock.nextConnection && newBlock.previousConnection) {
+                        lastBlock.nextConnection.connect(newBlock.previousConnection);
+                        connected = true;
+                        console.log('[SSE CREATE] Connected to end of stack in input:', inputName);
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                // If not connected to statement input, try value inputs
+                if (!connected) {
+                  // Try all inputs
+                  const inputs = parentBlock.inputList;
+                  for (const input of inputs) {
+                    if (input.type === Blockly.INPUT_VALUE && input.connection && !input.connection.targetBlock()) {
+                      if (newBlock.outputConnection) {
+                        input.connection.connect(newBlock.outputConnection);
+                        connected = true;
+                        console.log('[SSE CREATE] Connected to value input:', input.name);
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                if (!connected) {
+                  console.warn('[SSE CREATE] Could not find suitable connection point on parent block');
+                }
+              } else {
+                console.warn('[SSE CREATE] Parent block not found:', data.under_block_id);
+              }
+            }
+            
             success = true;
             console.log('[SSE CREATE] Successfully created block with children:', blockId, newBlock.type);
           } else {
@@ -597,6 +756,10 @@ const observer = new ResizeObserver(() => {
 observer.observe(blocklyDiv);
 
 const updateCode = () => {
+  // Initialize the Python generator with the workspace before generating code
+  // This ensures the Names database is properly set up for control flow blocks
+  pythonGenerator.init(ws);
+  
   // Instead of using workspaceToCode which processes ALL blocks,
   // manually process only blocks connected to create_mcp or func_def
   let code = '';

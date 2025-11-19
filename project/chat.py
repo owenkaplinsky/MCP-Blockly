@@ -227,10 +227,12 @@ def delete_block(block_id):
         traceback.print_exc()
         return f"Error deleting block: {str(e)}"
 
-def create_block(block_spec):
+def create_block(block_spec, under_block_id=None):
     """Create a block in the Blockly workspace"""
     try:
         print(f"[CREATE REQUEST] Attempting to create block: {block_spec}")
+        if under_block_id:
+            print(f"[CREATE REQUEST] Under block ID: {under_block_id}")
         
         # Generate a unique request ID
         import uuid
@@ -240,8 +242,11 @@ def create_block(block_spec):
         if request_id in creation_results:
             creation_results.pop(request_id)
         
-        # Add to creation queue
-        creation_queue.put({"request_id": request_id, "block_spec": block_spec})
+        # Add to creation queue with optional under_block_id
+        queue_data = {"request_id": request_id, "block_spec": block_spec}
+        if under_block_id:
+            queue_data["under_block_id"] = under_block_id
+        creation_queue.put(queue_data)
         print(f"[CREATE REQUEST] Added to queue with ID: {request_id}")
         
         # Wait for result with timeout
@@ -485,6 +490,28 @@ List of blocks:
 {blocks_context}
 
 YOU CANNOT CREATE A MCP BLOCK OR EDIT ITS INPUTS. YOU MUST TELL THE USER TO DO SO.
+
+For creating blocks, keep in mind: for `value`, if you want to put a string, you need to
+put a string block inside of it - you can't just put the string. For example:
+
+text_isEmpty(inputs(VALUE: "text"))
+
+This wouldn't work - you can't put a raw string in, you need to create a text block
+recursively inside of this. Same thing for numbers and so on.
+
+To put a block inside another (like an if inside a repeat), use two create block commands:
+first for the outer block, then for the inner block under it. This only applies to
+non-outputting blocks; outputting blocks (like a number in an addition) can be nested
+in one command.
+
+For blocks that allow infinite things (like ...N) you do not need to provide any inputs
+if you want it to be blank.
+
+---
+
+Don't share the DSL (DSL being the custom Blockly language) info with the user such
+as when creating a block unless they ask about it. It's not sensitive so you can
+share it with the user if they ask.
 """
     
     tools = [
@@ -516,6 +543,10 @@ YOU CANNOT CREATE A MCP BLOCK OR EDIT ITS INPUTS. YOU MUST TELL THE USER TO DO S
                         "command": {
                             "type": "string",
                             "description": "The create block command using the custom DSL format.",
+                        },
+                        "under": {
+                            "type": "string",
+                            "description": "The ID of the block that you want to place this under.",
                         },
                     },
                     "required": ["command"],
@@ -630,7 +661,8 @@ YOU CANNOT CREATE A MCP BLOCK OR EDIT ITS INPUTS. YOU MUST TELL THE USER TO DO S
                             
                         elif function_name == "create_block":
                             command = function_args.get("command", "")
-                            tool_result = create_block(command)
+                            under_block_id = function_args.get("under", None)
+                            tool_result = create_block(command, under_block_id)
                             result_label = "Create Operation"
                             
                         elif function_name == "run_mcp":
@@ -657,7 +689,7 @@ YOU CANNOT CREATE A MCP BLOCK OR EDIT ITS INPUTS. YOU MUST TELL THE USER TO DO S
                             # Update history with the tool call and result
                             temp_history.append({"role": "user", "content": current_prompt})
                             temp_history.append({"role": "assistant", "content": ai_response, "tool_calls": response_message.tool_calls})
-                            temp_history.append({"role": "tool", "tool_call_id": tool_call.id, "content": tool_result})
+                            temp_history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_result)})
                             
                             # Set up next prompt to have the model respond to the tool result
                             current_prompt = f"The tool has been executed with the result shown above. Please respond appropriately to the user based on this result."
