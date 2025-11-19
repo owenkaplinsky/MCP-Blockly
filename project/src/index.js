@@ -749,6 +749,100 @@ const setupCreationStream = () => {
 // Start the creation SSE connection
 setupCreationStream();
 
+const setupVariableStream = () => {
+  const eventSource = new EventSource('http://127.0.0.1:7861/variable_stream');
+  const processedRequests = new Set(); // Track processed variable requests
+  
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      
+      // Skip heartbeat messages
+      if (data.heartbeat) return;
+      
+      // Skip if we've already processed this request
+      if (data.request_id && processedRequests.has(data.request_id)) {
+        console.log('[SSE VARIABLE] Skipping duplicate variable request:', data.request_id);
+        return;
+      }
+      if (data.request_id) {
+        processedRequests.add(data.request_id);
+        // Clear after 10 seconds to allow retries if needed
+        setTimeout(() => processedRequests.delete(data.request_id), 10000);
+      }
+      
+      if (data.variable_name && data.request_id) {
+        console.log('[SSE VARIABLE] Received variable creation request:', data.request_id, data.variable_name);
+        
+        let success = false;
+        let error = null;
+        let variableId = null;
+        
+        try {
+          // Create the variable using Blockly's variable map
+          const variableName = data.variable_name;
+          
+          // Use the workspace's variable map to create a new variable
+          const variableModel = ws.getVariableMap().createVariable(variableName);
+          
+          if (variableModel) {
+            variableId = variableModel.getId();
+            success = true;
+            console.log('[SSE VARIABLE] Successfully created variable:', variableName, 'with ID:', variableId);
+          } else {
+            throw new Error('Failed to create variable model');
+          }
+          
+        } catch (e) {
+          error = e.toString();
+          console.error('[SSE VARIABLE] Error creating variable:', e);
+        }
+        
+        // Send result back to backend immediately
+        console.log('[SSE VARIABLE] Sending variable creation result:', { 
+          request_id: data.request_id, 
+          success, 
+          error,
+          variable_id: variableId 
+        });
+        
+        fetch('http://127.0.0.1:7861/variable_result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_id: data.request_id,
+            success: success,
+            error: error,
+            variable_id: variableId
+          })
+        }).then(response => {
+          console.log('[SSE VARIABLE] Variable creation result sent successfully');
+        }).catch(err => {
+          console.error('[SSE VARIABLE] Error sending variable creation result:', err);
+        });
+      }
+    } catch (err) {
+      console.error('[SSE VARIABLE] Error processing message:', err);
+    }
+  };
+  
+  eventSource.onerror = (error) => {
+    console.error('[SSE VARIABLE] Connection error:', error);
+    // Reconnect after 5 seconds
+    setTimeout(() => {
+      console.log('[SSE VARIABLE] Attempting to reconnect...');
+      setupVariableStream();
+    }, 5000);
+  };
+  
+  eventSource.onopen = () => {
+    console.log('[SSE VARIABLE] Connected to variable stream');
+  };
+};
+
+// Start the variable SSE connection
+setupVariableStream();
+
 // Observe any size change to the blockly container
 const observer = new ResizeObserver(() => {
   Blockly.svgResize(ws);

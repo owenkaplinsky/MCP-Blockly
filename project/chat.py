@@ -10,6 +10,8 @@ import gradio as gr
 import asyncio
 import queue
 import json
+import uuid
+import time
 from colorama import Fore, Style
 
 # Initialize OpenAI client (will be updated when API key is set)
@@ -28,6 +30,10 @@ deletion_results = {}
 # Queue for creation requests and results storage
 creation_queue = queue.Queue()
 creation_results = {}
+
+# Queue for variable creation requests and results storage
+variable_queue = queue.Queue()
+variable_results = {}
 
 blocks_context = ""
 try:
@@ -275,6 +281,47 @@ def create_block(block_spec, under_block_id=None):
         traceback.print_exc()
         return f"Error creating block: {str(e)}"
 
+def create_variable(var_name):
+    """Create a variable in the Blockly workspace"""
+    try:
+        print(f"[VARIABLE REQUEST] Attempting to create variable: {var_name}")
+        
+        # Generate a unique request ID
+        request_id = str(uuid.uuid4())
+        
+        # Clear any old results for this request ID first
+        if request_id in variable_results:
+            variable_results.pop(request_id)
+        
+        # Add to variable creation queue
+        queue_data = {"request_id": request_id, "variable_name": var_name}
+        variable_queue.put(queue_data)
+        print(f"[VARIABLE REQUEST] Added to queue with ID: {request_id}")
+        
+        # Wait for result with timeout
+        timeout = 8  # 8 seconds timeout
+        start_time = time.time()
+        check_interval = 0.05  # Check more frequently
+        
+        while time.time() - start_time < timeout:
+            if request_id in variable_results:
+                result = variable_results.pop(request_id)
+                print(f"[VARIABLE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
+                if result["success"]:
+                    return f"[TOOL] Successfully created variable: {result.get('variable_id', var_name)}"
+                else:
+                    return f"[TOOL] Failed to create variable: {result.get('error', 'Unknown error')}"
+            time.sleep(check_interval)
+        
+        print(f"[VARIABLE TIMEOUT] No response received for request {request_id} after {timeout} seconds")
+        return f"Timeout waiting for variable creation confirmation"
+            
+    except Exception as e:
+        print(f"[VARIABLE ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error creating variable: {str(e)}"
+
 # Server-Sent Events endpoint for creation requests
 @app.get("/create_stream")
 async def create_stream():
@@ -426,6 +473,83 @@ async def deletion_result(request: Request):
     
     return {"received": True}
 
+# Server-Sent Events endpoint for variable creation requests
+@app.get("/variable_stream")
+async def variable_stream():
+    """Stream variable creation requests to the frontend using Server-Sent Events"""
+    
+    async def clear_sent_request(sent_requests, request_id, delay):
+        """Clear request_id from sent_requests after delay seconds"""
+        await asyncio.sleep(delay)
+        if request_id in sent_requests:
+            sent_requests.discard(request_id)
+    
+    async def event_generator():
+        sent_requests = set()  # Track sent requests to avoid duplicates
+        heartbeat_counter = 0
+        
+        while True:
+            try:
+                # Check for variable creation requests (non-blocking)
+                if not variable_queue.empty():
+                    var_request = variable_queue.get_nowait()
+                    request_id = var_request.get("request_id")
+                    
+                    # Avoid sending duplicate requests too quickly
+                    if request_id not in sent_requests:
+                        sent_requests.add(request_id)
+                        print(f"[SSE VARIABLE SEND] Sending variable creation request with ID: {request_id}")
+                        yield f"data: {json.dumps(var_request)}\n\n"
+                        
+                        # Clear from sent_requests after 10 seconds
+                        asyncio.create_task(clear_sent_request(sent_requests, request_id, 10))
+                    else:
+                        print(f"[SSE VARIABLE SKIP] Skipping duplicate request for ID: {request_id}")
+                    
+                    await asyncio.sleep(0.1)  # Small delay between messages
+                else:
+                    # Send a heartbeat every 30 seconds to keep connection alive
+                    heartbeat_counter += 1
+                    if heartbeat_counter >= 300:  # 300 * 0.1 = 30 seconds
+                        yield f"data: {json.dumps({'heartbeat': True})}\n\n"
+                        heartbeat_counter = 0
+                    await asyncio.sleep(0.1)
+                    
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"[SSE VARIABLE ERROR] {e}")
+                await asyncio.sleep(1)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+# Endpoint to receive variable creation results from frontend
+@app.post("/variable_result")
+async def variable_result(request: Request):
+    """Receive variable creation results from the frontend"""
+    data = await request.json()
+    request_id = data.get("request_id")
+    success = data.get("success")
+    error = data.get("error")
+    variable_id = data.get("variable_id")
+    
+    print(f"[VARIABLE RESULT RECEIVED] request_id={request_id}, success={success}, error={error}, variable_id={variable_id}")
+    
+    if request_id:
+        # Store the result for the create_variable function to retrieve
+        variable_results[request_id] = data
+        print(f"[VARIABLE RESULT STORED] Results dict now has {len(variable_results)} items")
+    
+    return {"received": True}
+
 def create_gradio_interface():
     # Hardcoded system prompt
     SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
@@ -567,6 +691,23 @@ in one call.
         {
             "type": "function",
             "function": {
+                "name": "create_variable",
+                "description": "Creates a variable.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The name of the variable you want to create.",
+                        },
+                    },
+                    "required": ["name"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "run_mcp",
                 "description": "Runs the MCP with the given inputs. Create one parameter for each input that the user-created MCP allows.",
                 "parameters": {
@@ -665,7 +806,7 @@ in one call.
                         
                         if function_name == "delete_block":
                             block_id = function_args.get("id", "")
-                            print(Fore.YELLOW + f"Agent ran delete with ID `{block_id}`." + Style.RESET_ALL)
+                            print(Fore.YELLOW + f"Agent deleted block with ID `{block_id}`." + Style.RESET_ALL)
                             tool_result = delete_block(block_id)
                             result_label = "Delete Operation"
                             
@@ -673,11 +814,17 @@ in one call.
                             command = function_args.get("command", "")
                             under_block_id = function_args.get("under", None)
                             if under_block_id == None:
-                                print(Fore.YELLOW + f"Agent ran create with command `{command}`." + Style.RESET_ALL)
+                                print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
                             else:
-                                print(Fore.YELLOW + f"Agent ran create with command: `{command}`, under block ID: `{under_block_id}`." + Style.RESET_ALL)
+                                print(Fore.YELLOW + f"Agent created block with command: `{command}`, under block ID: `{under_block_id}`." + Style.RESET_ALL)
                             tool_result = create_block(command, under_block_id)
                             result_label = "Create Operation"
+
+                        elif function_name == "create_variable":
+                            name = function_args.get("name", "")
+                            print(Fore.YELLOW + f"Agent created variable with name `{name}`." + Style.RESET_ALL)
+                            tool_result = create_variable(name)
+                            result_label = "Create Var Operation"
                             
                         elif function_name == "run_mcp":
                             # Build the MCP call string from the arguments
