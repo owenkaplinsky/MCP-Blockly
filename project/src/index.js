@@ -591,7 +591,29 @@ const observer = new ResizeObserver(() => {
 observer.observe(blocklyDiv);
 
 const updateCode = () => {
-  let code = pythonGenerator.workspaceToCode(ws);
+  // Instead of using workspaceToCode which processes ALL blocks,
+  // manually process only blocks connected to create_mcp or func_def
+  let code = '';
+  
+  // Get all top-level blocks (not connected to other blocks)
+  const topBlocks = ws.getTopBlocks(false);
+  
+  // Process only create_mcp and func_def blocks
+  for (const block of topBlocks) {
+    if (block.type === 'create_mcp' || block.type === 'func_def') {
+      // Generate code for this block and its connected blocks
+      const blockCode = pythonGenerator.blockToCode(block);
+      if (blockCode) {
+        if (Array.isArray(blockCode)) {
+          code += blockCode[0] + '\n';
+        } else {
+          code += blockCode + '\n';
+        }
+      }
+    }
+    // Ignore any other top-level blocks (stray blocks)
+  }
+  
   const codeEl = document.querySelector('#generatedCode code');
 
   const call = `def llm_call(prompt, model):
