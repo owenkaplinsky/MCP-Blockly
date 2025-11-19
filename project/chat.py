@@ -10,6 +10,7 @@ import gradio as gr
 import asyncio
 import queue
 import json
+from colorama import Fore, Style
 
 # Initialize OpenAI client (will be updated when API key is set)
 client = None
@@ -434,8 +435,7 @@ You’ll receive the workspace state in this format:
 `blockId | block_name(inputs(input_name: value))`
 
 **Special cases:**
-- `create_mcp` and `func_def` use
-  `blockId | block_name(inputs(input_name: type), outputs(output_name: value))`
+- `create_mcp` and `func_def` use `blockId | block_name(inputs(input_name: type), outputs(output_name: value))`
 - Indentation or nesting shows logic hierarchy (like loops or conditionals).
 - The `blockId` before the pipe `|` is each block’s unique identifier.
 
@@ -443,16 +443,11 @@ You’ll receive the workspace state in this format:
 
 ### Your job
 - Help users understand or fix their MCP logic in natural, human language.
-- Never mention the internal block syntax or say “multi-context-protocol.” Just call it **MCP**.
+- You may reference the internal block syntax for your own understanding, but never show or explain it to the
+user unless they explicitly ask.
 - Focus on what the code *does* and what the user is trying to achieve, not on the raw block format.
-
----
-
-### Using Tools
-Before using any tool, **explicitly plan** what you will do.
-You can only use **one tool per message** - NEVER EVER combine multiple tool calls in one message.
-If you need two actions, use two messages.
-```
+- In your first message, you may either respond normally or call a tool. If you call a tool, you must first
+explain your intended plan and the steps you will take, then perform the tool call in the same message.
 
 ---
 
@@ -462,11 +457,9 @@ You can execute the MCP directly and get the result back.
 ---
 
 ### Deleting Blocks
-Each block starts with its ID, like `blockId | block_name(...)`.
-To delete one, end your message with:
-You can delete any block except the main `create_mcp` block.
-You can see the ID to the left of each block it will be a jarble of characters
-looking something like:
+- Each block starts with its ID, like `blockId | block_name(...)`.
+- To delete a block, specify its block ID. Each block ID is a unique random alphanumeric string shown to the left of the block.
+- You can delete any block except the main `create_mcp` block.
 
 `blockId | code`
 
@@ -476,42 +469,60 @@ the correct block.
 ---
 
 ### Creating Blocks
-You can create new blocks in the workspace.
-To create a block, specify its type and parameters (if any).
-
-If you want to create a block inside of a block, do it like this:
-
-block_name(inputs(value_name: block_name2(inputs(value_name2: value))))
-
-Where you specify inputs() per block, even if it's inside of another block.
-
 List of blocks:
 
 {blocks_context}
 
-YOU CANNOT CREATE A MCP BLOCK OR EDIT ITS INPUTS. YOU MUST TELL THE USER TO DO SO.
+---
 
-For creating blocks, keep in mind: for `value`, if you want to put a string, you need to
-put a string block inside of it - you can't just put the string. For example:
+You can create new blocks in the workspace by specifying the block type and its input parameters, if it has any.
+You cannot create a MCP block or edit its inputs or outputs.
+There are two kinds of nesting in Blockly:
+    1. **Statement-level nesting (main-level blocks)**  
+        These are blocks that represent actions or structures, such as loops or conditionals, which can contain other blocks *under* them.  
+        To create this kind of nesting, use **two separate `create_block` commands**:  
+        - First, create the outer block (for example, a `repeat` or `if` block).  
+        - Then, create the inner block *under* it using the `under` parameter.  
+        Example: putting an `if` block inside a `repeat` block.
 
-text_isEmpty(inputs(VALUE: "text"))
+    2. **Value-level nesting (output blocks)**  
+        These are blocks that produce a value (like a number, text, or expression). They can’t exist alone in the workspace - they must
+        be nested inside another block’s input. To create these, you can nest them directly in a single command, for example:
 
-This wouldn't work - you can't put a raw string in, you need to create a text block
-recursively inside of this. Same thing for numbers and so on.
+        math_arithmetic(inputs(A: math_number(inputs(NUM: 1)), B: math_number(inputs(NUM: 1))))
 
-To put a block inside another (like an if inside a repeat), use two create block commands:
-first for the outer block, then for the inner block under it. This only applies to
-non-outputting blocks; outputting blocks (like a number in an addition) can be nested
-in one command.
+        Here, the two `math_number` blocks are nested inside the `math_arithmetic` block in one call.
+
+When creating blocks, you are never allowed to insert raw text or numbers directly into a block's inputs.  
+Every value must be enclosed inside the correct block type that represents that value.  
+Failing to do this will cause the block to be invalid and unusable.
+
+Example of what you must NOT do:
+
+`text_isEmpty(inputs(VALUE: "text"))`
+
+This is invalid because "text" is a raw string and not a block.
+
+The correct and required form wraps the string inside a text block:
+
+`text_isEmpty(inputs(VALUE: text(inputs(TEXT: "text"))))`
+
+This is valid because it uses a text block as the value.
+
+This rule is absolute and applies to all value types:
+- Strings must always use a text block.
+- Numbers must always use a math_number block.
+- Booleans, lists, colors, and every other type must always use their correct block type.
+
+If a block has a value input, that input must always contain another block.  
+You are not permitted to use raw values under any circumstance.
 
 For blocks that allow infinite things (like ...N) you do not need to provide any inputs
 if you want it to be blank.
 
----
-
-Don't share the DSL (DSL being the custom Blockly language) info with the user such
-as when creating a block unless they ask about it. It's not sensitive so you can
-share it with the user if they ask.
+When creating blocks, you are unable to put an outputting block inside of another block
+which already exists. If you are trying to nest input blocks, you must create them all
+in one call.
 """
     
     tools = [
@@ -648,20 +659,23 @@ share it with the user if they ask.
                         function_name = tool_call.function.name
                         function_args = json.loads(tool_call.function.arguments)
                         
-                        print(f"[TOOL CALL] {function_name} with args: {function_args}")
-                        
                         # Execute the appropriate function
                         tool_result = None
                         result_label = ""
                         
                         if function_name == "delete_block":
                             block_id = function_args.get("id", "")
+                            print(Fore.YELLOW + f"Agent ran delete with ID `{block_id}`." + Style.RESET_ALL)
                             tool_result = delete_block(block_id)
                             result_label = "Delete Operation"
                             
                         elif function_name == "create_block":
                             command = function_args.get("command", "")
                             under_block_id = function_args.get("under", None)
+                            if under_block_id == None:
+                                print(Fore.YELLOW + f"Agent ran create with command `{command}`." + Style.RESET_ALL)
+                            else:
+                                print(Fore.YELLOW + f"Agent ran create with command: `{command}`, under block ID: `{under_block_id}`." + Style.RESET_ALL)
                             tool_result = create_block(command, under_block_id)
                             result_label = "Create Operation"
                             
@@ -673,12 +687,12 @@ share it with the user if they ask.
                                 # Format as key=value for execute_mcp
                                 params.append(f"{key}=\"{value}\"")
                             mcp_call = f"create_mcp({', '.join(params)})"
-                            print(f"[MCP CALL] Executing: {mcp_call}")
+                            print(Fore.YELLOW + f"Agent ran MCP with inputs: {mcp_call}." + Style.RESET_ALL)
                             tool_result = execute_mcp(mcp_call)
                             result_label = "MCP Execution Result"
                         
                         if tool_result:
-                            print(f"[TOOL RESULT] {tool_result}")
+                            print(Fore.YELLOW + f"[TOOL RESULT] {tool_result}" + Style.RESET_ALL)
                             
                             # Yield the tool result
                             if accumulated_response:
