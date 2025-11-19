@@ -10,11 +10,17 @@ The interface has three main areas. The canvas on the left is where you build by
 
 In the Development tab, you see your generated Python code alongside a test interface. The interface automatically creates input fields matching your tool's parameters. After you arrange your blocks, click Refresh to update the test interface, enter values, and click Submit to run your code. Results appear in the output fields.
 
-The AI Chat tab is the centerpiece of Agent-Blockly. It connects you with an AI assistant that fully understands your current block configuration and helps you build, modify, and debug your workflows through natural language. You can ask it to add input validation, fix a broken API call, reorganize your logic, or explain how your blocks work.
+The AI Chat tab lets you build and refine your project through conversation. It understands your workspace and can turn natural instructions into real changes inside the editor.
 
-The assistant doesn’t just answer questions - it actively collaborates with you. It can edit your workspace in real time, run your tool with sample inputs, and show you how it behaves. It’s aware of your project’s structure and can make precise, context-aware changes as you iterate.
+The assistant can:
+- Create new blocks from plain language. Describe what you want to add, and it builds the correct structure automatically.  
+- Delete or replace existing blocks without disrupting the rest of your layout.  
+- Create and name variables that become immediately usable in your workspace.  
+- Run your MCP tool with real inputs and show the actual outputs for testing.  
+- Build nested block structures, such as inserting expressions or operations inside other blocks.  
+- Perform multi-step changes and executions, refining your setup one step at a time.  
 
-The AI is capable of complex manipulations, such as inserting blocks inside others, creating nested structures, and arranging deeply recursive workflows.
+It works live and responds quickly, keeping your workspace synchronized with every instruction. Larger changes are best made in smaller steps, allowing for smooth and accurate updates.
 
 While it can handle a wide range of tasks, multi-step or highly complex changes work best when broken into smaller requests. Taking things one step at a time leads to more accurate and reliable results.
 
