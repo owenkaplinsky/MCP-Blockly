@@ -47,7 +47,7 @@ Start the application with:
 npm start
 ```
 
-Open your browser and navigate to http://127.0.0.1:8080 to begin building.
+After that, it will open a tab in your browser and you can start building!
 
 ## How It Works
 
