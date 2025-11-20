@@ -293,15 +293,17 @@ def build_interface():
         submit_btn.click(
             process_input,
             inputs=input_fields,
-            outputs=output_fields
+            outputs=output_fields,
+            queue=False
         )
 
     return demo
 
 
-demo = build_interface()
-app = gr.mount_gradio_app(app, demo, path="/")
+def get_gradio_interface():
+    return build_interface()
+
 
 if __name__ == "__main__":
-    print("[BOOT] Running Gradio+FastAPI combo on http://127.0.0.1:7860")
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    demo = build_interface()
+    app = gr.mount_gradio_app(app, demo, path="/")

@@ -160,7 +160,7 @@ settingsButton.addEventListener("click", () => {
   apiKeyModal.style.display = 'flex';
   
   // Load current API key from backend
-  fetch("http://127.0.0.1:7860/get_api_key", {
+  fetch("/get_api_key", {
     method: "GET",
   })
   .then(response => response.json())
@@ -183,12 +183,12 @@ saveApiKeyButton.addEventListener("click", () => {
 
   // Save API key to both backend servers (test.py and chat.py)
   Promise.all([
-    fetch("http://127.0.0.1:7860/set_api_key", {
+    fetch("/set_api_key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ api_key: apiKey }),
     }),
-    fetch("http://127.0.0.1:7861/set_api_key_chat", {
+    fetch("/set_api_key_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ api_key: apiKey }),
@@ -247,7 +247,7 @@ cleanWorkspace.addEventListener("click", () => {
 
 // Set up SSE connection for deletion requests
 const setupDeletionStream = () => {
-  const eventSource = new EventSource('http://127.0.0.1:7861/delete_stream');
+  const eventSource = new EventSource('/delete_stream');
   const processedRequests = new Set(); // Track processed deletion requests
   
   eventSource.onmessage = (event) => {
@@ -300,7 +300,7 @@ const setupDeletionStream = () => {
         
         // Send result back to backend immediately
         console.log('[SSE] Sending deletion result:', { block_id: data.block_id, success, error });
-        fetch('http://127.0.0.1:7861/deletion_result', {
+        fetch('/deletion_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -338,7 +338,7 @@ setupDeletionStream();
 
 // Set up SSE connection for creation requests
 const setupCreationStream = () => {
-  const eventSource = new EventSource('http://127.0.0.1:7861/create_stream');
+  const eventSource = new EventSource('/create_stream');
   const processedRequests = new Set(); // Track processed creation requests
   
   eventSource.onmessage = (event) => {
@@ -712,7 +712,7 @@ const setupCreationStream = () => {
           block_id: blockId 
         });
         
-        fetch('http://127.0.0.1:7861/creation_result', {
+        fetch('/creation_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -750,7 +750,7 @@ const setupCreationStream = () => {
 setupCreationStream();
 
 const setupVariableStream = () => {
-  const eventSource = new EventSource('http://127.0.0.1:7861/variable_stream');
+  const eventSource = new EventSource('/variable_stream');
   const processedRequests = new Set(); // Track processed variable requests
   
   eventSource.onmessage = (event) => {
@@ -806,7 +806,7 @@ const setupVariableStream = () => {
           variable_id: variableId 
         });
         
-        fetch('http://127.0.0.1:7861/variable_result', {
+        fetch('/variable_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -928,7 +928,7 @@ const updateCode = () => {
   }
 
   // Send generated Python code to backend
-  fetch("http://127.0.0.1:7860/update_code", {
+  fetch("/update_code", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
@@ -953,7 +953,7 @@ let globalVarString = '';
 // Function to check if chat backend is available
 const checkChatBackend = async () => {
   try {
-    const response = await fetch("http://127.0.0.1:7861/update_chat", {
+    const response = await fetch("/update_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -986,7 +986,7 @@ const processChatUpdateQueue = () => {
 // Send chat update with retry logic
 const sendChatUpdate = async (chatCode, retryCount = 0) => {
   try {
-    const response = await fetch("http://127.0.0.1:7861/update_chat", {
+    const response = await fetch("/update_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 

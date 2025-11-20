@@ -93,7 +93,7 @@ def execute_mcp(mcp_call):
         # Now, retrieve the real generated Python code from test.py
         blockly_code = ""
         try:
-            resp = requests.get("http://localhost:7860/get_latest_code")
+            resp = requests.get(f"http://127.0.0.1:{os.getenv('PORT', 8080)}/get_latest_code")
             if resp.ok:
                 blockly_code = resp.json().get("code", "")
         except Exception as e:
@@ -904,10 +904,11 @@ You will be given the current variables that are in the workspace. Like the bloc
 
     return demo
 
-# Mount Gradio with FastAPI
-demo = create_gradio_interface()
-app = gr.mount_gradio_app(app, demo, path="/")
+
+def get_chat_gradio_interface():
+    return create_gradio_interface()
+
 
 if __name__ == "__main__":
-    print("[BOOT] Running Gradio+FastAPI Chat on http://127.0.0.1:7861")
-    uvicorn.run(app, host="0.0.0.0", port=7861)
+    demo = create_gradio_interface()
+    app = gr.mount_gradio_app(app, demo, path="/")
