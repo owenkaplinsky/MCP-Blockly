@@ -1,10 +1,10 @@
-# Agent-Blockly
+# MCP Blockly
 
-Agent-Blockly is a visual programming environment for building AI tools. Instead of writing Python code, you arrange blocks in a visual editor and the system generates code for you. You can test your tool immediately and download it when you're ready.
+MCP Blockly is a visual programming environment for building AI tools. Instead of writing Python code, you arrange blocks in a visual editor and the system generates code for you. You can test your tool immediately and download it when you're ready.
 
 ## What This Does
 
-Agent-Blockly lets you build Model Context Protocol (MCP) servers using a block-based interface. You define what inputs your tool needs, add blocks that perform operations (calling APIs, parsing data, executing language models), and specify what your tool outputs. The system generates Python code from your block arrangement and provides a testing interface to verify your work.
+MCP Blockly lets you build Model Context Protocol (MCP) servers using a block-based interface. You define what inputs your tool needs, add blocks that perform operations (calling APIs, parsing data, executing language models), and specify what your tool outputs. The system generates Python code from your block arrangement and provides a testing interface to verify your work.
 
 The interface has three main areas. The canvas on the left is where you build by dragging and connecting blocks. On the right are two tabs for working with your project: the Development tab for testing, and an AI Chat tab.
 
@@ -33,8 +33,8 @@ The toolbox contains blocks for common operations: calling language models, maki
 Clone the repository and install dependencies.
 
 ```bash
-git clone https://github.com/owenkaplinsky/agent-blockly.git
-cd agent-blockly/project
+git clone https://github.com/owenkaplinsky/mcp-blockly.git
+cd mcp-blockly/project
 pip install -r ../requirements.txt
 npm install
 ```
