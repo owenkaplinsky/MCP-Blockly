@@ -1,3 +1,5 @@
 gradio
 dotenv
 openai
+requests
+colorama
