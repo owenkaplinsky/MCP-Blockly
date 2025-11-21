@@ -1,28 +1,27 @@
 # MCP Blockly
 
-MCP Blockly is a visual programming environment for building AI tools. Instead of writing Python code, you arrange blocks in a visual editor and the system generates code for you. You can test your tool immediately and download it when you're ready.
+MCP Blockly is a visual programming environment for learning to build real MCP servers. Millions of students start with Scratch, but there's a gap between block coding and real AI tools. MCP Blockly bridges that gap: it lets you create functioning MCP servers using the same visual building style you already understand, with no Python syntax required. You can test your tool immediately and download it when you're ready.
 
 ## What This Does
 
-MCP Blockly lets you build Model Context Protocol (MCP) servers using a block-based interface. You define what inputs your tool needs, add blocks that perform operations (calling APIs, parsing data, executing language models), and specify what your tool outputs. The system generates Python code from your block arrangement and provides a testing interface to verify your work.
+MCP Blockly lets you build Model Context Protocol (MCP) servers using a block-based interface, perfect for students and newcomers stepping into AI development. The core building happens on the visual canvas. You define your MCP inputs, arrange your logic with blocks, and choose what your server will return. Every change you make is reflected in live Python code on the side. The generator handles function signatures and MCP boilerplate automatically, so you never have to worry about syntax or configuration. Everything stays valid and synchronized.
 
 The interface has three main areas. The canvas on the left is where you build by dragging and connecting blocks. On the right are two tabs for working with your project: the Testing tab, and an AI Assistant tab.
 
-In the Testing tab, you see your generated Python code alongside a test interface. The interface automatically creates input fields matching your tool's parameters. After you arrange your blocks, click Refresh to update the test interface, enter values, and click Submit to run your code. Results appear in the output fields.
+Once your blocks are in place, the Development panel makes testing simple. It automatically generates input fields based on your parameters, so you can run the MCP server logic instantly. You enter values, submit, and see the outputs appear. This kind of immediate feedback helps learners understand how data flows through their tool and builds intuition about how AI tools work.
 
-The AI Assistant tab lets you build and refine your project through conversation. It understands your workspace and can turn natural instructions into real changes inside the editor.
+The AI Assistant tab lets you build and refine your project through conversation. It understands your workspace and becomes a natural part of how you learn and explore the MCP ecosystem.
 
 The assistant can:
-- Create new blocks from plain language. Describe what you want to add, and it builds the correct structure automatically.  
+- Create new blocks from plain language. Describe what you want to accomplish, and it builds the correct structure automatically.  
 - Delete or replace existing blocks without disrupting the rest of your layout.  
 - Create and name variables that become immediately usable in your workspace.  
 - Run your MCP tool with real inputs and show the actual outputs for testing.  
 - Build nested block structures, such as inserting expressions or operations inside other blocks.  
+- Explain concepts and guide you step by step through the creation process.  
 - Perform multi-step changes and executions, refining your setup one step at a time.  
 
-It works live and responds quickly, keeping your workspace synchronized with every instruction. Larger changes are best made in smaller steps, allowing for smooth and accurate updates.
-
-While it can handle a wide range of tasks, multi-step or highly complex changes work best when broken into smaller requests. Taking things one step at a time leads to more accurate and reliable results.
+It works live and responds quickly, keeping your workspace synchronized with every instruction. This combination of hands-on building with conversational guidance bridges the gap between visual coding and real AI workflows. Taking things one step at a time leads to more accurate and reliable results as you learn.
 
 The File menu handles creating new projects, opening existing ones, and downloading your work. You can download just the generated Python code or the entire project as a JSON file. The Edit menu provides standard undo, redo, and a cleanup button to reorganize blocks. The Examples menu includes pre-built projects you can load to understand how to structure your own.
 
@@ -30,9 +29,9 @@ The File menu handles creating new projects, opening existing ones, and download
 
 The system has two optional but recommended API keys:
 
-**OpenAI API Key**: Required if you want to use the AI Assistant to help build your MCP blocks, or if your blocks include operations that call language models. Without it, you can still create and test blocks manually.
+**OpenAI API Key**: Enables the AI Assistant: your guide through the learning process. The assistant helps you build blocks, fix mistakes, explain concepts, and explore MCP development interactively. Without it, you can still create and test blocks manually.
 
-**Hugging Face API Key**: Required if you want to deploy your MCP as a live server on Hugging Face Spaces with the agent. Without it, you can build and test locally but won't be able to share your tool as a live server unless you manually create a space and upload the generated `app.py` file. When you deploy, creates a new Space, and uploads your tool. The Space automatically becomes an MCP server that other AI systems can connect to and call natively.
+**Hugging Face API Key**: Allows you to deploy your MCP as a real, live server on Hugging Face Spaces. This is a practical way to learn how AI tools work in production. The system creates a new Space and uploads your tool automatically. The Space becomes a real MCP server that other AI systems can connect to and call natively. Without it, you can build and test locally but won't be able to deploy unless you manually create a space and upload the generated `app.py` file.
 
 Set these keys through Settings before using features that depend on them. Both are optional: you can build and test tools without either key, but certain features won't be available.
 
