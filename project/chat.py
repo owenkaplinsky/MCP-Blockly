@@ -855,11 +855,11 @@ Note: Users can see tool response outputs verbatim. You don't have to repeat the
                         if space_is_running:
                             def convert_repo_to_live_mcp(url):
                                 # input:  https://huggingface.co/spaces/user/space
-                                # output: https://user-space.hf.space/gradio_api/mcp/sse
+                                # output: https://user-space.hf.space/gradio_api/mcp
 
                                 parts = url.split("/spaces/")
                                 user, space = parts[1].split("/")
-                                return f"https://{user}-{space}.hf.space/gradio_api/mcp/sse"
+                                return f"https://{user}-{space}.hf.space/gradio_api/mcp"
 
                             live_mcp_url = convert_repo_to_live_mcp(current_mcp_server_url)
 
