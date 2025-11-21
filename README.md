@@ -1,6 +1,6 @@
 # MCP Blockly
 
-MCP Blockly is a visual programming environment for learning to build real MCP servers. Millions of students start with Scratch, but there's a gap between block coding and real AI tools. MCP Blockly bridges that gap: it lets you create functioning MCP servers using the same visual building style you already understand, with no Python syntax required. You can test your tool immediately and download it when you're ready.
+MCP Blockly is a visual programming environment for building real MCP servers without dealing with Python syntax or configuration. It brings the clarity of block-based logic into AI development, allowing newcomers and experienced builders alike to design, test, and refine MCP tools through a clean drag-and-connect workflow. Every block you place generates runnable Python code instantly, so you can focus on structure and behavior while the system manages the boilerplate.
 
 ## What This Does
 
