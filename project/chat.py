@@ -720,20 +720,17 @@ List of blocks:
 You can create new blocks in the workspace by specifying the block type and its input parameters, if it has any.
 You cannot create a MCP block or edit its inputs or outputs.
 There are two kinds of nesting in Blockly:
-    1. **Statement-level nesting (main-level blocks)**  
-        These are blocks that represent actions or structures, such as loops or conditionals, which can contain other blocks *under* them.  
-        To create this kind of nesting, use **two separate `create_block` commands**:  
-        - First, create the outer block (for example, a `repeat` or `if` block).  
-        - Then, create the inner block *under* it using the `under` parameter.  
-        Example: putting an `if` block inside a `repeat` block.
-
-    2. **Value-level nesting (output blocks)**  
-        These are blocks that produce a value (like a number, text, or expression). They can’t exist alone in the workspace - they must
-        be nested inside another block’s input. To create these, you can nest them directly in a single command, for example:
-
-        math_arithmetic(inputs(A: math_number(inputs(NUM: 1)), B: math_number(inputs(NUM: 1))))
-
-        Here, the two `math_number` blocks are nested inside the `math_arithmetic` block in one call.
+1. **Statement-level nesting (main-level blocks)**  
+    These are blocks that represent actions or structures, such as loops or conditionals, which can contain other blocks *under* them.  
+    To create this kind of nesting, use **two separate `create_block` commands**:  
+    - First, create the outer block (for example, a `repeat` or `if` block).  
+    - Then, create the inner block *under* it using the `under` parameter.  
+    Example: putting an `if` block inside a `repeat` block.
+2. **Value-level nesting (output blocks)**  
+    These are blocks that produce a value (like a number, text, or expression). They can’t exist alone in the workspace - they must
+    be nested inside another block’s input. To create these, you can nest them directly in a single command, for example:
+    math_arithmetic(inputs(A: math_number(inputs(NUM: 1)), B: math_number(inputs(NUM: 1))))
+    Here, the two `math_number` blocks are nested inside the `math_arithmetic` block in one call.
 
 When creating blocks, you are never allowed to insert raw text or numbers directly into a block's inputs.  
 Every value must be enclosed inside the correct block type that represents that value.  
@@ -766,6 +763,10 @@ When creating blocks, you are unable to put an outputting block inside of anothe
 which already exists. If you are trying to nest input blocks, you must create them all
 in one call.
 
+But, for blocks that you want to stack that connect above or below to other blocks, you cannot
+create both blocks in the same response. You must create one, wait, then create the other. You
+need to wait and not do both in the same response because you need the ID of the first block.
+
 ### Variables
 
 You will be given the current variables that are in the workspace. Like the blocks, you will see:
@@ -789,87 +790,77 @@ The deployed Space will be public and shareable with others.
     tools = [
         {
             "type": "function",
-            "function": {
-                "name": "delete_block",
-                "description": "Delete a single block using its ID.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "The ID of the block you're trying to delete.",
-                        },
+            "name": "delete_block",
+            "description": "Delete a single block using its ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The ID of the block you're trying to delete.",
                     },
-                    "required": ["id"],
                 },
+                "required": ["id"],
             }
         },
         {
             "type": "function",
-            "function": {
-                "name": "create_block",
-                "description": "Creates a single block that allows recursive nested blocks.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "command": {
-                            "type": "string",
-                            "description": "The create block command using the custom DSL format.",
-                        },
-                        "under": {
-                            "type": "string",
-                            "description": "The ID of the block that you want to place this under.",
-                        },
+            "name": "create_block",
+            "description": "Creates a single block that allows recursive nested blocks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The create block command using the custom DSL format.",
                     },
-                    "required": ["command"],
+                    "under": {
+                        "type": "string",
+                        "description": "The ID of the block that you want to place this under.",
+                    },
                 },
+                "required": ["command"],
             }
         },
         {
             "type": "function",
-            "function": {
-                "name": "create_variable",
-                "description": "Creates a variable.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the variable you want to create.",
-                        },
+            "name": "create_variable",
+            "description": "Creates a variable.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the variable you want to create.",
                     },
-                    "required": ["name"],
                 },
+                "required": ["name"],
             }
         },
         {
             "type": "function",
-            "function": {
-                "name": "run_mcp",
-                "description": "Runs the MCP with the given inputs. Create one parameter for each input that the user-created MCP allows.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                    "additionalProperties": True
-                },
+            "name": "run_mcp",
+            "description": "Runs the MCP with the given inputs. Create one parameter for each input that the user-created MCP allows.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": True
             }
         },
         {
             "type": "function",
-            "function": {
-                "name": "deploy_to_huggingface",
-                "description": "Deploy the generated MCP tool to a Hugging Face Space. Requires a Hugging Face API key to be set.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "space_name": {
-                            "type": "string",
-                            "description": "The name of the Hugging Face Space to create (e.g., 'my-tool')",
-                        },
+            "name": "deploy_to_huggingface",
+            "description": "Deploy the generated MCP tool to a Hugging Face Space. Requires a Hugging Face API key to be set.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "space_name": {
+                        "type": "string",
+                        "description": "The name of the Hugging Face Space to create (e.g., 'my-tool')",
                     },
-                    "required": ["space_name"],
                 },
+                "required": ["space_name"],
             }
         },
     ]
@@ -878,7 +869,7 @@ The deployed Space will be public and shareable with others.
         # Check if API key is set and create/update client
         global client, stored_api_key
         
-        # Use stored key or check environment
+        # Use stored key or environment key
         api_key = stored_api_key or os.environ.get("OPENAI_API_KEY")
         
         if api_key and (not client or (hasattr(client, 'api_key') and client.api_key != api_key)):
@@ -892,76 +883,101 @@ The deployed Space will be public and shareable with others.
             yield "OpenAI API key not configured. Please set it in File > Settings in the Blockly interface."
             return
         
-        # Get the chat context from the global variable
+        # Get chat context
         global latest_blockly_chat_code
         context = latest_blockly_chat_code
         global latest_blockly_vars
         vars = latest_blockly_vars
         
         # Convert history to OpenAI format
-        full_history = []
+        input_items = []
         for human, ai in history:
-            full_history.append({"role": "user", "content": human})
-            full_history.append({"role": "assistant", "content": ai})
-
-        # Debug: Print context to see what we're getting
+            input_items.append({"role": "user", "content": human})
+            input_items.append({"role": "assistant", "content": ai})
+        
+        # Debug
         print(f"[DEBUG] Context received: {context if context else 'No context available'}")
-
-        # Combine system prompt with context
-        full_system_prompt = SYSTEM_PROMPT
+        
+        # Build instructions
+        instructions = SYSTEM_PROMPT
         if context:
-            full_system_prompt += f"\n\nCurrent Blockly workspace state:\n{context}"
+            instructions += f"\n\nCurrent Blockly workspace state:\n{context}"
         else:
-            full_system_prompt += "\n\nNote: No Blockly workspace context is currently available."
-
+            instructions += "\n\nNote: No Blockly workspace context is currently available."
+        
         if vars != "":
-            full_system_prompt += f"\n\nCurrent Blockly variables:\n{vars}"
+            instructions += f"\n\nCurrent Blockly variables:\n{vars}"
         else:
-            full_system_prompt += "\n\nNote: No Blockly variables are currently available."
-
-        # Allow up to 10 consecutive messages from the agent
+            instructions += "\n\nNote: No Blockly variables are currently available."
+        
+        # Iteration control
         accumulated_response = ""
         max_iterations = 10
         current_iteration = 0
         
-        # Start with the user's original message
+        # Start with original user message
         current_prompt = message
-        temp_history = full_history.copy()
+        temp_input_items = input_items.copy()
         
+        # MAIN LOOP
         while current_iteration < max_iterations:
             current_iteration += 1
             
             try:
-                # Create the completion request with tools
-                response = client.chat.completions.create(
-                    model="gpt-4o-2024-08-06",
-                    messages=[
-                        {"role": "system", "content": full_system_prompt},
-                        *temp_history,
-                        {"role": "user", "content": current_prompt}
-                    ],
+                # Create Responses API call
+                response = client.responses.create(
+                    model="gpt-4o",
+                    instructions=instructions,
+                    input=temp_input_items + [{"role": "user", "content": current_prompt}],
                     tools=tools,
-                    tool_choice="auto"  # Let the model decide whether to use tools
+                    tool_choice="auto"
                 )
                 
-                response_message = response.choices[0].message
-                ai_response = response_message.content or ""
+                # print(response)
                 
-                # Check if the model wants to use tools
-                if response_message.tool_calls:
-                    # Display the AI's message before executing tools (if any)
+                # Extract outputs
+                ai_response = ""
+                tool_calls = []
+                
+                for item in response.output:
+                    
+                    if item.type == "message":
+                        # Extract assistant text
+                        for content in item.content:
+                            if content.type == "output_text":
+                                ai_response = content.text
+                    
+                    elif item.type == "function_call":
+                        # Collect tool calls
+                        tool_calls.append(item)
+                
+                # PROCESSING TOOL CALLS
+                if tool_calls:
+
+                    # Show assistant text FIRST if it exists
                     if ai_response:
                         if accumulated_response:
                             accumulated_response += "\n\n"
                         accumulated_response += ai_response
                         yield accumulated_response
-                    
-                    # Process each tool call
-                    for tool_call in response_message.tool_calls:
-                        function_name = tool_call.function.name
-                        function_args = json.loads(tool_call.function.arguments)
+
+                    # Now process each tool call, one by one
+                    for tool_call in tool_calls:
+                        function_name = tool_call.name
+                        function_args = json.loads(tool_call.arguments)
+                        call_id = tool_call.call_id
                         
-                        # Execute the appropriate function
+                        temp_input_items.append({"role": "user", "content": current_prompt})
+                        temp_input_items.append({"role": "assistant", "content": ai_response})
+
+                        temp_input_items.append({
+                            "type": "function_call",
+                            "call_id": call_id,
+                            "name": function_name,
+                            "arguments": tool_call.arguments
+                        })
+                        
+                        # Execute the tool
                         tool_result = None
                         result_label = ""
                         
@@ -970,29 +986,26 @@ The deployed Space will be public and shareable with others.
                             print(Fore.YELLOW + f"Agent deleted block with ID `{block_id}`." + Style.RESET_ALL)
                             tool_result = delete_block(block_id)
                             result_label = "Delete Operation"
-                            
+                        
                         elif function_name == "create_block":
                             command = function_args.get("command", "")
                             under_block_id = function_args.get("under", None)
-                            if under_block_id == None:
+                            if under_block_id is None:
                                 print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
                             else:
-                                print(Fore.YELLOW + f"Agent created block with command: `{command}`, under block ID: `{under_block_id}`." + Style.RESET_ALL)
+                                print(Fore.YELLOW + f"Agent created block with command `{command}`, under block ID `{under_block_id}`." + Style.RESET_ALL)
                             tool_result = create_block(command, under_block_id)
                             result_label = "Create Operation"
-
+                        
                         elif function_name == "create_variable":
                             name = function_args.get("name", "")
                             print(Fore.YELLOW + f"Agent created variable with name `{name}`." + Style.RESET_ALL)
                             tool_result = create_variable(name)
                             result_label = "Create Var Operation"
-                            
+                        
                         elif function_name == "run_mcp":
-                            # Build the MCP call string from the arguments
-                            # run_mcp receives dynamic arguments based on the MCP's inputs
                             params = []
                             for key, value in function_args.items():
-                                # Format as key=value for execute_mcp
                                 params.append(f"{key}=\"{value}\"")
                             mcp_call = f"create_mcp({', '.join(params)})"
                             print(Fore.YELLOW + f"Agent ran MCP with inputs: {mcp_call}." + Style.RESET_ALL)
@@ -1001,38 +1014,40 @@ The deployed Space will be public and shareable with others.
                         
                         elif function_name == "deploy_to_huggingface":
                             space_name = function_args.get("space_name", "")
-                            print(Fore.YELLOW + f"Agent deploying to Hugging Face Space: `{space_name}`." + Style.RESET_ALL)
+                            print(Fore.YELLOW + f"Agent deploying to Hugging Face Space `{space_name}`." + Style.RESET_ALL)
                             tool_result = deploy_to_huggingface(space_name)
                             result_label = "Deployment Result"
                         
-                        if tool_result:
+                        # SHOW TOOL RESULT IMMEDIATELY
+                        if tool_result is not None:
                             print(Fore.YELLOW + f"[TOOL RESULT] {tool_result}" + Style.RESET_ALL)
                             
-                            # Yield the tool result
                             if accumulated_response:
                                 accumulated_response += "\n\n"
                             accumulated_response += f"**{result_label}:** {tool_result}"
                             yield accumulated_response
-                            
-                            # Update history with the tool call and result
-                            temp_history.append({"role": "user", "content": current_prompt})
-                            temp_history.append({"role": "assistant", "content": ai_response, "tool_calls": response_message.tool_calls})
-                            temp_history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_result)})
-                            
-                            # Set up next prompt to have the model respond to the tool result
-                            current_prompt = f"The tool has been executed with the result shown above. Please respond appropriately to the user based on this result."
+                        
+                        # Append the tool result into the conversation for the model
+                        temp_input_items.append({
+                            "type": "function_call_output",
+                            "call_id": tool_call.call_id,
+                            "output": str(tool_result)
+                        })
                     
-                    # Continue to next iteration if tools were used
-                    continue
+                    # Tell model to respond to tool result
+                    current_prompt = "The tool has been executed with the result shown above. Please respond appropriately."
                     
+                    continue  # Continue the main loop
+                
                 else:
-                    # No tool calls, this is a regular response
-                    if accumulated_response:
-                        accumulated_response += "\n\n"
-                    accumulated_response += ai_response
+                    if ai_response:
+                        if accumulated_response:
+                            accumulated_response += "\n\n"
+                        accumulated_response += ai_response
+                    
                     yield accumulated_response
                     break
-                    
+                
             except Exception as e:
                 if accumulated_response:
                     yield f"{accumulated_response}\n\nError in iteration {current_iteration}: {str(e)}"
@@ -1040,12 +1055,13 @@ The deployed Space will be public and shareable with others.
                     yield f"Error: {str(e)}"
                 return
         
-        # If we hit max iterations, add a note
+        # Max iterations reached
         if current_iteration >= max_iterations:
             accumulated_response += f"\n\n*(Reached maximum of {max_iterations} consecutive responses)*"
             yield accumulated_response
-    
-    # Create the standard ChatInterface
+
+
+    # Attach to Gradio ChatInterface
     demo = gr.ChatInterface(
         fn=chat_with_context,
         title="AI Assistant",
