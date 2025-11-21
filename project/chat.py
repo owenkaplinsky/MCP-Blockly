@@ -17,8 +17,9 @@ from colorama import Fore, Style
 # Initialize OpenAI client (will be updated when API key is set)
 client = None
 
-# Store API key in memory for this process
+# Store API keys in memory for this process
 stored_api_key = ""
+stored_hf_key = ""
 
 # Global variable to store the latest chat context
 latest_blockly_chat_code = ""
@@ -70,16 +71,23 @@ async def update_chat(request: Request):
 
 @app.post("/set_api_key_chat")
 async def set_api_key_chat(request: Request):
-    """Receive API key from frontend and store it"""
-    global stored_api_key
+    """Receive API keys from frontend and store them"""
+    global stored_api_key, stored_hf_key
     data = await request.json()
     api_key = data.get("api_key", "").strip()
+    hf_key = data.get("hf_key", "").strip()
     
-    # Store in memory and set environment variable for this process
-    stored_api_key = api_key
-    os.environ["OPENAI_API_KEY"] = api_key
+    # Store in memory and set environment variables for this process
+    if api_key:
+        stored_api_key = api_key
+        os.environ["OPENAI_API_KEY"] = api_key
+        print(f"[CHAT API KEY] Set OPENAI_API_KEY in chat.py environment")
     
-    print(f"[CHAT API KEY] Set OPENAI_API_KEY in chat.py environment")
+    if hf_key:
+        stored_hf_key = hf_key
+        os.environ["HUGGINGFACE_API_KEY"] = hf_key
+        print(f"[CHAT HF KEY] Set HUGGINGFACE_API_KEY in chat.py environment")
+    
     return {"success": True}
 
 def execute_mcp(mcp_call):
@@ -555,6 +563,111 @@ async def variable_result(request: Request):
     
     return {"received": True}
 
+def deploy_to_huggingface(space_name):
+    """Deploy the generated MCP code to a Hugging Face Space"""
+    global stored_hf_key
+    
+    if not stored_hf_key:
+        return "[DEPLOY ERROR] No Hugging Face API key configured. Please set it in File > Keys."
+    
+    try:
+        from huggingface_hub import HfApi
+    except ImportError:
+        return "[DEPLOY ERROR] huggingface_hub not installed. Run: pip install huggingface_hub"
+    
+    try:
+        api = HfApi(token=stored_hf_key)
+        
+        # Get username from token
+        user_info = api.whoami()
+        username = user_info["name"]
+        repo_id = f"{username}/{space_name}"
+        
+        print(f"[DEPLOY] Creating HF Space: {repo_id}")
+        
+        # Create the Space
+        api.create_repo(
+            repo_id=repo_id,
+            repo_type="space",
+            space_sdk="gradio",
+            private=False,
+        )
+        
+        print(f"[DEPLOY] Space created. Uploading files...")
+        
+        # Get the actual generated Python code from test.py (not the Blockly DSL)
+        python_code = ""
+        try:
+            resp = requests.get(f"http://127.0.0.1:{os.getenv('PORT', 8080)}/get_latest_code")
+            if resp.ok:
+                python_code = resp.json().get("code", "")
+        except Exception as e:
+            print(f"[DEPLOY WARN] Could not fetch Python code from test.py: {e}")
+        
+        if not python_code.strip():
+            return "[DEPLOY ERROR] No generated Python code available. Create and test your tool first."
+        
+        # Upload app.py with actual Python code
+        api.upload_file(
+            path_or_fileobj=python_code.encode(),
+            path_in_repo="app.py",
+            repo_id=repo_id,
+            repo_type="space",
+        )
+        
+        # Create requirements.txt
+        requirements_content = """gradio
+openai
+requests
+huggingface_hub
+"""
+        
+        api.upload_file(
+            path_or_fileobj=requirements_content.encode(),
+            path_in_repo="requirements.txt",
+            repo_id=repo_id,
+            repo_type="space",
+        )
+        
+        # Create README.md with proper YAML front matter
+        readme_content = f"""---
+title: {space_name.replace('-', ' ').title()}
+emoji: 🚀
+colorFrom: purple
+colorTo: blue
+sdk: gradio
+app_file: app.py
+pinned: false
+---
+
+# {space_name}
+
+This is an MCP (Model Context Protocol) tool created with [Blockly MCP Builder](https://github.com/owenkaplinsky/mcp-blockly).
+
+The tool has been automatically deployed to Hugging Face Spaces and is ready to use!
+
+## About
+Created using Blockly MCP Builder - a visual programming environment for building AI tools.
+"""
+        
+        api.upload_file(
+            path_or_fileobj=readme_content.encode("utf-8"),
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type="space",
+        )
+        
+        space_url = f"https://huggingface.co/spaces/{repo_id}"
+        print(f"[DEPLOY SUCCESS] Space deployed: {space_url}")
+        
+        return f"[TOOL] Successfully deployed to Hugging Face Space!\n\n**Space URL:** {space_url}"
+        
+    except Exception as e:
+        print(f"[DEPLOY ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return f"[DEPLOY ERROR] Failed to deploy: {str(e)}"
+
 def create_gradio_interface():
     # Hardcoded system prompt
     SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
@@ -658,6 +771,19 @@ in one call.
 You will be given the current variables that are in the workspace. Like the blocks, you will see:
 
 `varId | varName`
+
+---
+
+### Deploying to Hugging Face Spaces
+
+Once the user has tested and is happy with their MCP tool, you can deploy it to a live Hugging Face Space using the `deploy_to_huggingface` tool.
+
+**To deploy:**
+1. Ask the user for a name for their Space (e.g., "my-tool")
+2. Call the `deploy_to_huggingface` tool with that name
+3. The tool will create a new Space, upload the code, and return a live URL
+
+The deployed Space will be public and shareable with others.
 """
     
     tools = [
@@ -726,6 +852,23 @@ You will be given the current variables that are in the workspace. Like the bloc
                     "properties": {},
                     "required": [],
                     "additionalProperties": True
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "deploy_to_huggingface",
+                "description": "Deploy the generated MCP tool to a Hugging Face Space. Requires a Hugging Face API key to be set.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "space_name": {
+                            "type": "string",
+                            "description": "The name of the Hugging Face Space to create (e.g., 'my-tool')",
+                        },
+                    },
+                    "required": ["space_name"],
                 },
             }
         },
@@ -856,6 +999,12 @@ You will be given the current variables that are in the workspace. Like the bloc
                             tool_result = execute_mcp(mcp_call)
                             result_label = "MCP Execution Result"
                         
+                        elif function_name == "deploy_to_huggingface":
+                            space_name = function_args.get("space_name", "")
+                            print(Fore.YELLOW + f"Agent deploying to Hugging Face Space: `{space_name}`." + Style.RESET_ALL)
+                            tool_result = deploy_to_huggingface(space_name)
+                            result_label = "Deployment Result"
+                        
                         if tool_result:
                             print(Fore.YELLOW + f"[TOOL RESULT] {tool_result}" + Style.RESET_ALL)
                             
@@ -899,7 +1048,7 @@ You will be given the current variables that are in the workspace. Like the bloc
     # Create the standard ChatInterface
     demo = gr.ChatInterface(
         fn=chat_with_context,
-        title="Blockly MCP Chat",
+        title="AI Assistant",
     )
 
     return demo

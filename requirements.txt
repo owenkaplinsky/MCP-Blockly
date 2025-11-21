@@ -3,3 +3,6 @@ dotenv
 openai
 requests
 colorama
+huggingface_hub
+gradio_client
+mcp

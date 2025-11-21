@@ -28,7 +28,7 @@ export const forBlock = Object.create(null);
 /*
 
 This file is for the secondary code generator.
-It is not meant to be shown to the user, but rather to communicate the state of the workspace to an AI chat assistant in a simplistic text format.
+It is not meant to be shown to the user, but rather to communicate the state of the workspace to an AI Assistant assistant in a simplistic text format.
 
 */
 

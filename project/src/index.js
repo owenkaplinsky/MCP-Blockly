@@ -149,63 +149,72 @@ downloadCodeButton.addEventListener("click", () => {
   document.body.removeChild(element);
 });
 
-// Settings button and API Key Modal
+// Settings button and Keys Modal
 const settingsButton = document.querySelector('#settingsButton');
 const apiKeyModal = document.querySelector('#apiKeyModal');
 const apiKeyInput = document.querySelector('#apiKeyInput');
+const hfKeyInput = document.querySelector('#hfKeyInput');
 const saveApiKeyButton = document.querySelector('#saveApiKey');
 const cancelApiKeyButton = document.querySelector('#cancelApiKey');
 
 settingsButton.addEventListener("click", () => {
   apiKeyModal.style.display = 'flex';
   
-  // Load current API key from backend
+  // Load current API keys from backend
   fetch("/get_api_key", {
     method: "GET",
   })
   .then(response => response.json())
   .then(data => {
     apiKeyInput.value = data.api_key || '';
+    hfKeyInput.value = data.hf_key || '';
   })
   .catch(err => {
-    console.error("Error loading API key:", err);
+    console.error("Error loading API keys:", err);
   });
 });
 
 saveApiKeyButton.addEventListener("click", () => {
   const apiKey = apiKeyInput.value.trim();
+  const hfKey = hfKeyInput.value.trim();
 
-  // Validate OpenAI key format
-  if (!apiKey.startsWith("sk-") || apiKey.length < 40) {
-    alert("Invalid API key format. Please enter a valid OpenAI API key.");
+  // Validate OpenAI key format if provided
+  if (apiKey && (!apiKey.startsWith("sk-") || apiKey.length < 40)) {
+    alert("Invalid OpenAI API key format. Please enter a valid OpenAI API key (starts with 'sk-').");
     return;
   }
 
-  // Save API key to both backend servers (test.py and chat.py)
+  // Validate Hugging Face key format if provided
+  if (hfKey && (!hfKey.startsWith("hf_") || hfKey.length < 20)) {
+    alert("Invalid Hugging Face API key format. Please enter a valid Hugging Face API key (starts with 'hf_').");
+    return;
+  }
+
+  // Save API keys to both backend servers (test.py and chat.py)
   Promise.all([
     fetch("/set_api_key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey }),
+      body: JSON.stringify({ api_key: apiKey, hf_key: hfKey }),
     }),
     fetch("/set_api_key_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey }),
+      body: JSON.stringify({ api_key: apiKey, hf_key: hfKey }),
     })
   ])
   .then(async (responses) => {
     const results = await Promise.all(responses.map(r => r.json()));
     if (results.every(r => r.success)) {
-      alert('API key saved successfully');
+      alert('API keys saved successfully');
       apiKeyModal.style.display = 'none';
     } else {
-      alert('Failed to save API key to all services');
+      alert('Failed to save API keys to all services');
     }
   })
   .catch(err => {
-    console.error("Error saving API key:", err);
-    alert('Failed to save API key');
+    console.error("Error saving API keys:", err);
+    alert('Failed to save API keys');
   });
 });
 
@@ -1023,7 +1032,7 @@ const sendChatUpdate = async (chatCode, retryCount = 0) => {
   }
 };
 
-// Update function for the Chat generator (AI Chat tab)
+// Update function for the Chat generator (AI Assistant tab)
 const updateChatCode = () => {
   globalChatCode = chatGenerator.workspaceToCode(ws);
   const codeEl = document.querySelector('#aichatCode code');
