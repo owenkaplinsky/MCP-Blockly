@@ -24,7 +24,17 @@ It works live and responds quickly, keeping your workspace synchronized with eve
 
 While it can handle a wide range of tasks, multi-step or highly complex changes work best when broken into smaller requests. Taking things one step at a time leads to more accurate and reliable results.
 
-The File menu handles creating new projects, opening existing ones, and downloading your work. You can download just the generated Python code or the entire project as a JSON file. The Edit menu provides standard undo, redo, and a cleanup button to reorganize blocks. The Examples menu includes pre-built projects you can load to understand how to structure your own. You need to set your OpenAI API key through Settings before the system can execute language model calls or power the chat.
+The File menu handles creating new projects, opening existing ones, and downloading your work. You can download just the generated Python code or the entire project as a JSON file. The Edit menu provides standard undo, redo, and a cleanup button to reorganize blocks. The Examples menu includes pre-built projects you can load to understand how to structure your own.
+
+### API Keys
+
+The system has two optional but recommended API keys:
+
+**OpenAI API Key**: Required if you want to use the AI Assistant to help build your MCP blocks, or if your blocks include operations that call language models. Without it, you can still create and test blocks manually.
+
+**Hugging Face API Key**: Required if you want to deploy your MCP as a live server on Hugging Face Spaces with the agent. Without it, you can build and test locally but won't be able to share your tool as a live server unless you manually create a space and upload the generated `app.py` file. When you deploy, creates a new Space, and uploads your tool. The Space automatically becomes an MCP server that other AI systems can connect to and call natively.
+
+Set these keys through Settings before using features that depend on them. Both are optional: you can build and test tools without either key, but certain features won't be available.
 
 The toolbox contains blocks for common operations: calling language models, making HTTP requests, extracting data from JSON, manipulating text, performing math, and working with lists. You connect these blocks to build your workflow.
 
@@ -61,8 +71,12 @@ Code execution happens in a sandboxed Python environment. User code is executed 
 
 The AI Assistant component is the sophisticated heart of the system. It continuously monitors the current workspace state and code. When you send a message, the system formats your entire block structure into a readable representation and includes it in the context sent to OpenAI. The model receives not just your question but a complete understanding of what you've built. The system includes a detailed system prompt that explains MCP concepts, the block syntax, and what actions the model can perform.
 
-Based on the model's response, the system recognizes three special commands: run to execute your MCP with sample inputs, delete to remove a block by ID, and create to add new blocks to your workspace. When the model issues these commands, they're executed immediately. For block modifications, the system uses Server-Sent Events to stream commands back to the frontend, which creates or deletes blocks in real time while you watch. This maintains real-time synchronization between the chat interface and the visual editor.
+Based on the model's response, the system recognizes four special commands: run to execute your MCP with sample inputs, delete to remove a block by ID, create to add new blocks to your workspace, and deploy_to_huggingface to publish your tool as a live server. When the model issues these commands, they're executed immediately. For block modifications, the system uses Server-Sent Events to stream commands back to the frontend, which creates or deletes blocks in real time while you watch. This maintains real-time synchronization between the chat interface and the visual editor.
 
-The AI Assistant can execute multiple actions per conversation turn. If the model decides it needs to run your code to see the result before suggesting improvements, it does that automatically. If it needs to delete a broken block and create a replacement, it performs both operations and then reports back with what happened. This looping continues for up to five consecutive iterations per user message, allowing the AI to progressively refine your blocks without requiring you to send multiple messages.
+The AI Assistant can execute multiple actions per conversation turn. If the model decides it needs to run your code to see the result before suggesting improvements, it does that automatically. If it needs to delete a broken block and create a replacement, it performs both operations and then reports back with what happened. This looping continues for up to ten consecutive iterations per user message, allowing the AI to progressively refine your blocks without requiring you to send multiple messages.
+
+When you're ready to share your MCP tool, you can deploy it directly to Hugging Face Spaces. Once deployed, the tool becomes a real MCP server that can be called by any AI system supporting the MCP protocol. The AI Assistant in MCP Blockly can immediately use your deployed tool—just ask it to call your MCP and it will invoke the actual live server.
+
+The agent also monitors your Space's build status. Build typically takes 1-2 minutes. Once the Space reaches RUNNING status, all the tools you defined in your blocks become available for the AI to call natively. If you send a message while the Space is still building, the AI will let you know to wait a moment before your MCP tools become available.
 
 API keys are managed through environment variables set at runtime. The system uses Gradio to automatically generate user interfaces based on the function signatures in your generated code, creating input and output fields that match your tool's parameters.

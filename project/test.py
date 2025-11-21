@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
-import uvicorn
 import os
 import ast
 

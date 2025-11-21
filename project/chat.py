@@ -5,7 +5,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
-import uvicorn
 import gradio as gr
 import asyncio
 import queue
@@ -13,6 +12,7 @@ import json
 import uuid
 import time
 from colorama import Fore, Style
+from huggingface_hub import HfApi
 
 # Initialize OpenAI client (will be updated when API key is set)
 client = None
@@ -38,6 +38,13 @@ creation_results = {}
 # Queue for variable creation requests and results storage
 variable_queue = queue.Queue()
 variable_results = {}
+
+# Global variable to store the deployed HF MCP server URL
+current_mcp_server_url = None
+
+# Global variable to track if a deployment just happened
+deployment_just_happened = False
+deployment_message = ""
 
 blocks_context = ""
 try:
@@ -89,125 +96,6 @@ async def set_api_key_chat(request: Request):
         print(f"[CHAT HF KEY] Set HUGGINGFACE_API_KEY in chat.py environment")
     
     return {"success": True}
-
-def execute_mcp(mcp_call):
-    """Execute MCP call using the actual Python function from test.py"""
-    global stored_api_key, latest_blockly_chat_code
-
-    if stored_api_key:
-        os.environ["OPENAI_API_KEY"] = stored_api_key
-
-    try:
-        # Now, retrieve the real generated Python code from test.py
-        blockly_code = ""
-        try:
-            resp = requests.get(f"http://127.0.0.1:{os.getenv('PORT', 8080)}/get_latest_code")
-            if resp.ok:
-                blockly_code = resp.json().get("code", "")
-        except Exception as e:
-            print(f"[WARN] Could not fetch real Python code: {e}")
-
-        if not blockly_code.strip():
-            return "No Python code available from test.py"
-
-        # Parse the MCP call arguments
-        match = re.match(r'create_mcp\((.*)\)', mcp_call.strip())
-        if not match:
-            return "Invalid MCP call format"
-
-        params_str = match.group(1)
-        user_inputs = []
-
-        if params_str:
-            import ast
-            try:
-                dict_str = "{" + params_str.replace("=", ":") + "}"
-                param_dict = ast.literal_eval(dict_str)
-                user_inputs = [str(v) for v in param_dict.values()]
-            except Exception:
-                for pair in params_str.split(','):
-                    if '=' in pair:
-                        _, value = pair.split('=', 1)
-                        user_inputs.append(value.strip().strip('"').strip("'"))
-
-        # Prepare to execute
-        result = ""
-        lines = blockly_code.split('\n')
-        filtered_lines = []
-        skip_mode = False
-        in_demo_block = False
-
-        for line in lines:
-            if 'import gradio' in line:
-                continue
-            if 'demo = gr.Interface' in line:
-                in_demo_block = True
-                skip_mode = True
-                continue
-            elif 'demo.launch' in line:
-                skip_mode = False
-                in_demo_block = False
-                continue
-            elif in_demo_block:
-                continue
-            if 'gr.' in line:
-                continue
-            if not skip_mode:
-                filtered_lines.append(line)
-
-        code_to_run = '\n'.join(filtered_lines)
-
-        def capture_result(msg):
-            nonlocal result
-            result = msg
-
-        env = {
-            "reply": capture_result,
-            "__builtins__": __builtins__,
-        }
-
-        exec("import os", env)
-        exec("import requests", env)
-        exec("import json", env)
-
-        exec(code_to_run, env)
-
-        if "create_mcp" in env:
-            import inspect
-            sig = inspect.signature(env["create_mcp"])
-            params = list(sig.parameters.values())
-
-            typed_args = []
-            for i, arg in enumerate(user_inputs):
-                if i >= len(params):
-                    break
-                if arg is None or arg == "":
-                    typed_args.append(None)
-                    continue
-                anno = params[i].annotation
-                try:
-                    if anno == int:
-                        typed_args.append(int(float(arg)))
-                    elif anno == float:
-                        typed_args.append(float(arg))
-                    elif anno == bool:
-                        typed_args.append(str(arg).lower() in ("true", "1"))
-                    elif anno == str or anno == inspect._empty:
-                        typed_args.append(str(arg))
-                    else:
-                        typed_args.append(arg)
-                except Exception:
-                    typed_args.append(arg)
-
-            result = env["create_mcp"](*typed_args)
-
-        return result if result else "No output generated"
-
-    except Exception as e:
-        print(f"[MCP EXECUTION ERROR] {e}")
-        import traceback
-        traceback.print_exc()
-        return f"Error executing MCP: {str(e)}"
 
 def delete_block(block_id):
     """Delete a block from the Blockly workspace"""
@@ -642,12 +530,9 @@ pinned: false
 
 # {space_name}
 
-This is an MCP (Model Context Protocol) tool created with [Blockly MCP Builder](https://github.com/owenkaplinsky/mcp-blockly).
+This is a MCP server created with [MCP Blockly](https://github.com/owenkaplinsky/mcp-blockly): a visual programming environment for building AI tools.
 
 The tool has been automatically deployed to Hugging Face Spaces and is ready to use!
-
-## About
-Created using Blockly MCP Builder - a visual programming environment for building AI tools.
 """
         
         api.upload_file(
@@ -659,6 +544,13 @@ Created using Blockly MCP Builder - a visual programming environment for buildin
         
         space_url = f"https://huggingface.co/spaces/{repo_id}"
         print(f"[DEPLOY SUCCESS] Space deployed: {space_url}")
+        
+        # Store the MCP server URL globally for native MCP support
+        global current_mcp_server_url, deployment_just_happened, deployment_message
+        current_mcp_server_url = space_url
+        deployment_just_happened = True
+        deployment_message = f"Your MCP tool is being built on Hugging Face Spaces. This usually takes 1-2 minutes. Once it's ready, you'll be able to use the MCP tools defined in your blocks."
+        print(f"[MCP] Registered MCP server: {current_mcp_server_url}")
         
         return f"[TOOL] Successfully deployed to Hugging Face Space!\n\n**Space URL:** {space_url}"
         
@@ -693,8 +585,15 @@ explain your intended plan and the steps you will take, then perform the tool ca
 
 ---
 
-### Running MCP
-You can execute the MCP directly and get the result back.
+### Using Your MCP
+Once you deploy your MCP to a Hugging Face Space, the model will automatically have access to all the tools you defined. Simply ask the model to use your MCP tools, and it will call them natively without manual intervention.
+
+**Deployment workflow:**
+1. Create and test your MCP using Blockly blocks
+2. Deploy to a Hugging Face Space using the `deploy_to_huggingface` tool
+3. After deployment, the MCP tool becomes immediately available in this chat
+4. You may call this tool afterwards as needed. Do not immediately run the MCP
+server after deploying it. The user must ask (you can ask if they want it)
 
 ---
 
@@ -785,6 +684,12 @@ Once the user has tested and is happy with their MCP tool, you can deploy it to 
 3. The tool will create a new Space, upload the code, and return a live URL
 
 The deployed Space will be public and shareable with others.
+
+You NEVER need to deploy it more than once. If you deployed it, you can run it as many times as you want WITHOUT deploying again.
+
+---
+
+Note: Users can see tool response outputs verbatim. You don't have to repeat the tool response unless you want to.
 """
     
     tools = [
@@ -835,17 +740,6 @@ The deployed Space will be public and shareable with others.
                     },
                 },
                 "required": ["name"],
-            }
-        },
-        {
-            "type": "function",
-            "name": "run_mcp",
-            "description": "Runs the MCP with the given inputs. Create one parameter for each input that the user-created MCP allows.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": True
             }
         },
         {
@@ -924,12 +818,77 @@ The deployed Space will be public and shareable with others.
             current_iteration += 1
             
             try:
+                # Build dynamic tools list with MCP support
+                dynamic_tools = tools.copy() if tools else []
+                
+                # Inject MCP tool if a server is registered
+                global current_mcp_server_url, deployment_just_happened, deployment_message
+                space_building_status = None  # Track if space is building
+                if current_mcp_server_url:
+                    mcp_injection_successful = False
+                    try:
+                        # Try to verify the MCP server is available before injecting
+                        space_is_running = False
+                        try:
+                            # Extract username and space name from URL
+                            # URL format: https://huggingface.co/spaces/username/space_name
+                            url_parts = current_mcp_server_url.split("/spaces/")
+                            if len(url_parts) == 2:
+                                space_id = url_parts[1]
+                                api = HfApi()
+                                runtime_info = api.get_space_runtime(space_id)
+                                print(f"[MCP] Space runtime status: {runtime_info}")
+                                # Check if space is running
+                                if runtime_info and runtime_info.stage == "RUNNING":
+                                    space_is_running = True
+                                    # Space is running - deployment is complete
+                                    deployment_just_happened = False
+                                    print(f"[MCP] Space is RUNNING")
+                                else:
+                                    # Space is not running - it's likely building
+                                    space_building_status = runtime_info.stage if runtime_info else "unknown"
+                                    print(f"[MCP] Space is not running yet (stage: {space_building_status})")
+                        except Exception as check_error:
+                            print(f"[MCP] Could not verify space runtime: {check_error}")
+                        
+                        # Only inject the MCP tool if the space is verified running
+                        if space_is_running:
+                            def convert_repo_to_live_mcp(url):
+                                # input:  https://huggingface.co/spaces/user/space
+                                # output: https://user-space.hf.space/gradio_api/mcp/sse
+
+                                parts = url.split("/spaces/")
+                                user, space = parts[1].split("/")
+                                return f"https://{user}-{space}.hf.space/gradio_api/mcp/sse"
+
+                            live_mcp_url = convert_repo_to_live_mcp(current_mcp_server_url)
+
+                            mcp_tool = {
+                                "type": "mcp",
+                                "server_url": live_mcp_url,
+                                "server_label": "user_mcp_server",
+                                "require_approval": "never"
+                            }
+                            dynamic_tools.append(mcp_tool)
+                            print(f"[MCP] Injected MCP tool for server: {current_mcp_server_url}")
+                        else:
+                            print(f"[MCP] Skipping MCP tool injection - space not running yet")
+                    except Exception as mcp_error:
+                        print(f"[MCP ERROR] Failed during MCP injection: {mcp_error}")
+                        print(f"[MCP] Continuing without MCP tools...")
+                        # Continue without MCP - don't crash
+                
+                # Add deployment status message to instructions if deployment just happened and space is not running
+                deployment_instructions = instructions
+                if deployment_just_happened and space_building_status and space_building_status != "RUNNING":
+                    deployment_instructions = instructions + f"\n\n**MCP DEPLOYMENT STATUS:** {deployment_message}"
+                
                 # Create Responses API call
                 response = client.responses.create(
                     model="gpt-4o",
-                    instructions=instructions,
+                    instructions=deployment_instructions,
                     input=temp_input_items + [{"role": "user", "content": current_prompt}],
-                    tools=tools,
+                    tools=dynamic_tools,
                     tool_choice="auto"
                 )
                 
@@ -1002,15 +961,6 @@ The deployed Space will be public and shareable with others.
                             print(Fore.YELLOW + f"Agent created variable with name `{name}`." + Style.RESET_ALL)
                             tool_result = create_variable(name)
                             result_label = "Create Var Operation"
-                        
-                        elif function_name == "run_mcp":
-                            params = []
-                            for key, value in function_args.items():
-                                params.append(f"{key}=\"{value}\"")
-                            mcp_call = f"create_mcp({', '.join(params)})"
-                            print(Fore.YELLOW + f"Agent ran MCP with inputs: {mcp_call}." + Style.RESET_ALL)
-                            tool_result = execute_mcp(mcp_call)
-                            result_label = "MCP Execution Result"
                         
                         elif function_name == "deploy_to_huggingface":
                             space_name = function_args.get("space_name", "")
