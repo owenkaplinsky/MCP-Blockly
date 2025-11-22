@@ -9,37 +9,6 @@ import '@blockly/toolbox-search';
 import DarkTheme from '@blockly/theme-dark';
 import './index.css';
 
-// Initialize the Python generator's Names database if it doesn't exist
-if (!pythonGenerator.nameDB_) {
-  pythonGenerator.init = function(workspace) {
-    // Call parent init if it exists
-    if (Blockly.Generator.prototype.init) {
-      Blockly.Generator.prototype.init.call(this, workspace);
-    }
-    
-    // Initialize the Names database for variable name generation
-    if (!this.nameDB_) {
-      this.nameDB_ = new Blockly.Names(this.RESERVED_WORDS_);
-    } else {
-      this.nameDB_.reset();
-    }
-    
-    // Add reserved Python keywords
-    const reservedWords = ['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 
-                          'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
-                          'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 
-                          'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return',
-                          'try', 'while', 'with', 'yield'];
-    
-    for (const word of reservedWords) {
-      this.nameDB_.setVariableMap(word, word);
-    }
-    
-    // Initialize function name database
-    this.functionNames_ = this.nameDB_;
-  };
-}
-
 // Register the blocks and generator with Blockly
 Blockly.common.defineBlocks(blocks);
 Object.assign(pythonGenerator.forBlock, forBlock);
@@ -132,7 +101,7 @@ downloadCodeButton.addEventListener("click", () => {
   // Get the current generated code
   const codeEl = document.querySelector('#generatedCode code');
   const code = codeEl ? codeEl.textContent : '';
-  
+
   if (!code) {
     alert('No code to download');
     return;
@@ -140,7 +109,7 @@ downloadCodeButton.addEventListener("click", () => {
 
   var filename = "app.py";
   var element = document.createElement('a');
-  
+
   element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(code));
   element.setAttribute('download', filename);
   element.style.display = 'none';
@@ -159,19 +128,19 @@ const cancelApiKeyButton = document.querySelector('#cancelApiKey');
 
 settingsButton.addEventListener("click", () => {
   apiKeyModal.style.display = 'flex';
-  
+
   // Load current API keys from backend
   fetch("/get_api_key", {
     method: "GET",
   })
-  .then(response => response.json())
-  .then(data => {
-    apiKeyInput.value = data.api_key || '';
-    hfKeyInput.value = data.hf_key || '';
-  })
-  .catch(err => {
-    console.error("Error loading API keys:", err);
-  });
+    .then(response => response.json())
+    .then(data => {
+      apiKeyInput.value = data.api_key || '';
+      hfKeyInput.value = data.hf_key || '';
+    })
+    .catch(err => {
+      console.error("Error loading API keys:", err);
+    });
 });
 
 saveApiKeyButton.addEventListener("click", () => {
@@ -203,19 +172,19 @@ saveApiKeyButton.addEventListener("click", () => {
       body: JSON.stringify({ api_key: apiKey, hf_key: hfKey }),
     })
   ])
-  .then(async (responses) => {
-    const results = await Promise.all(responses.map(r => r.json()));
-    if (results.every(r => r.success)) {
-      alert('API keys saved successfully');
-      apiKeyModal.style.display = 'none';
-    } else {
-      alert('Failed to save API keys to all services');
-    }
-  })
-  .catch(err => {
-    console.error("Error saving API keys:", err);
-    alert('Failed to save API keys');
-  });
+    .then(async (responses) => {
+      const results = await Promise.all(responses.map(r => r.json()));
+      if (results.every(r => r.success)) {
+        alert('API keys saved successfully');
+        apiKeyModal.style.display = 'none';
+      } else {
+        alert('Failed to save API keys to all services');
+      }
+    })
+    .catch(err => {
+      console.error("Error saving API keys:", err);
+      alert('Failed to save API keys');
+    });
 });
 
 cancelApiKeyButton.addEventListener("click", () => {
@@ -258,14 +227,14 @@ cleanWorkspace.addEventListener("click", () => {
 const setupDeletionStream = () => {
   const eventSource = new EventSource('/delete_stream');
   const processedRequests = new Set(); // Track processed deletion requests
-  
+
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      
+
       // Skip heartbeat messages
       if (data.heartbeat) return;
-      
+
       // Skip if we've already processed this exact request
       const requestKey = `${data.block_id}_${Date.now()}`;
       if (data.block_id && processedRequests.has(data.block_id)) {
@@ -277,15 +246,15 @@ const setupDeletionStream = () => {
         // Clear after 10 seconds to allow retries if needed
         setTimeout(() => processedRequests.delete(data.block_id), 10000);
       }
-      
+
       if (data.block_id) {
         console.log('[SSE] Received deletion request for block:', data.block_id);
-        
+
         // Try to delete the block
         const block = ws.getBlockById(data.block_id);
         let success = false;
         let error = null;
-        
+
         if (block) {
           console.log('[SSE] Found block to delete:', block.type, block.id);
           // Check if it's the main create_mcp block (which shouldn't be deleted)
@@ -306,7 +275,7 @@ const setupDeletionStream = () => {
           error = 'Block not found';
           console.log('[SSE] Block not found:', data.block_id);
         }
-        
+
         // Send result back to backend immediately
         console.log('[SSE] Sending deletion result:', { block_id: data.block_id, success, error });
         fetch('/deletion_result', {
@@ -327,7 +296,7 @@ const setupDeletionStream = () => {
       console.error('[SSE] Error processing message:', err);
     }
   };
-  
+
   eventSource.onerror = (error) => {
     console.error('[SSE] Connection error:', error);
     // Reconnect after 5 seconds
@@ -336,7 +305,7 @@ const setupDeletionStream = () => {
       setupDeletionStream();
     }, 5000);
   };
-  
+
   eventSource.onopen = () => {
     console.log('[SSE] Connected to deletion stream');
   };
@@ -349,14 +318,14 @@ setupDeletionStream();
 const setupCreationStream = () => {
   const eventSource = new EventSource('/create_stream');
   const processedRequests = new Set(); // Track processed creation requests
-  
+
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      
+
       // Skip heartbeat messages
       if (data.heartbeat) return;
-      
+
       // Skip if we've already processed this request
       if (data.request_id && processedRequests.has(data.request_id)) {
         console.log('[SSE CREATE] Skipping duplicate creation request:', data.request_id);
@@ -367,54 +336,54 @@ const setupCreationStream = () => {
         // Clear after 10 seconds to allow retries if needed
         setTimeout(() => processedRequests.delete(data.request_id), 10000);
       }
-      
+
       if (data.block_spec && data.request_id) {
         console.log('[SSE CREATE] Received creation request:', data.request_id, data.block_spec);
-        
+
         let success = false;
         let error = null;
         let blockId = null;
-        
+
         try {
           // Parse and create blocks recursively
           function parseAndCreateBlock(spec, shouldPosition = false) {
             // Match block_name(inputs(...))
             const blockMatch = spec.match(/^(\w+)\s*\((.+)\)$/s);
-            
+
             if (!blockMatch) {
               throw new Error(`Invalid block specification format: ${spec}`);
             }
-            
+
             const blockType = blockMatch[1];
             const content = blockMatch[2].trim();
-            
+
             console.log('[SSE CREATE] Parsing block:', blockType, 'with content:', content);
-            
+
             // Check if this has inputs() wrapper
             let inputsContent = content;
             if (content.startsWith('inputs(') && content.endsWith(')')) {
               inputsContent = content.slice(7, -1); // Remove 'inputs(' and ')'
             }
-            
+
             // Create the block
             const newBlock = ws.newBlock(blockType);
-            
+
             if (inputsContent) {
               // Parse the inputs content
               const inputs = parseInputs(inputsContent);
               console.log('[SSE CREATE] Parsed inputs:', inputs);
-              
+
               // Special handling for make_json block
               if (blockType === 'make_json') {
                 // Count FIELD entries to determine how many fields we need
                 let fieldCount = 0;
                 const fieldValues = {};
                 const keyValues = {};
-                
+
                 for (const [key, value] of Object.entries(inputs)) {
                   const fieldMatch = key.match(/^FIELD(\d+)$/);
                   const keyMatch = key.match(/^KEY(\d+)$/);
-                  
+
                   if (fieldMatch) {
                     const index = parseInt(fieldMatch[1]);
                     fieldCount = Math.max(fieldCount, index + 1);
@@ -424,21 +393,21 @@ const setupCreationStream = () => {
                     keyValues[index] = value;
                   }
                 }
-                
+
                 // Set up the mutator state
                 if (fieldCount > 0) {
                   newBlock.fieldCount_ = fieldCount;
                   newBlock.fieldKeys_ = [];
-                  
+
                   // Create the inputs through the mutator
                   for (let i = 0; i < fieldCount; i++) {
                     const keyValue = keyValues[i];
-                    const key = (typeof keyValue === 'string' && !keyValue.match(/^\w+\s*\(inputs\(/)) 
-                      ? keyValue.replace(/^["']|["']$/g, '') 
+                    const key = (typeof keyValue === 'string' && !keyValue.match(/^\w+\s*\(inputs\(/))
+                      ? keyValue.replace(/^["']|["']$/g, '')
                       : `key${i}`;
-                    
+
                     newBlock.fieldKeys_[i] = key;
-                    
+
                     // Create the input
                     const input = newBlock.appendValueInput('FIELD' + i);
                     const field = new Blockly.FieldTextInput(key);
@@ -449,14 +418,14 @@ const setupCreationStream = () => {
                     input.appendField(field, 'KEY' + i);
                     input.appendField(':');
                   }
-                  
+
                   // Now connect the field values
                   for (let i = 0; i < fieldCount; i++) {
                     const value = fieldValues[i];
                     if (value && typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
                       // This is a nested block, create it recursively
                       const childBlock = parseAndCreateBlock(value);
-                      
+
                       // Connect the child block to the FIELD input
                       const input = newBlock.getInput('FIELD' + i);
                       if (input && input.connection && childBlock.outputConnection) {
@@ -473,7 +442,7 @@ const setupCreationStream = () => {
                     if (value.match(/^\w+\s*\(inputs\(/)) {
                       // This is a nested block, create it recursively
                       const childBlock = parseAndCreateBlock(value);
-                      
+
                       // Connect the child block to the appropriate input
                       const input = newBlock.getInput(key);
                       if (input && input.connection && childBlock.outputConnection) {
@@ -483,7 +452,7 @@ const setupCreationStream = () => {
                       // This is a simple value, set it as a field
                       // Remove quotes if present
                       const cleanValue = value.replace(/^["']|["']$/g, '');
-                      
+
                       // Try to set as a field value
                       try {
                         newBlock.setFieldValue(cleanValue, key);
@@ -509,33 +478,33 @@ const setupCreationStream = () => {
                 }
               }
             }
-            
+
             // Initialize the block (renders it)
             newBlock.initSvg();
-            
+
             // Only position the top-level block
             if (shouldPosition) {
               // Find a good position that doesn't overlap existing blocks
               const existingBlocks = ws.getAllBlocks();
               let x = 50;
               let y = 50;
-              
+
               // Simple positioning: stack new blocks vertically
               if (existingBlocks.length > 0) {
                 const lastBlock = existingBlocks[existingBlocks.length - 1];
                 const lastPos = lastBlock.getRelativeToSurfaceXY();
                 y = lastPos.y + lastBlock.height + 20;
               }
-              
+
               newBlock.moveBy(x, y);
             }
-            
+
             // Render the block
             newBlock.render();
-            
+
             return newBlock;
           }
-          
+
           // Helper function to parse inputs(key: value, key2: value2, ...)
           function parseInputs(inputStr) {
             const result = {};
@@ -545,12 +514,12 @@ const setupCreationStream = () => {
             let inQuotes = false;
             let quoteChar = '';
             let readingKey = true;
-            
+
             for (let i = 0; i < inputStr.length; i++) {
               const char = inputStr[i];
-              
+
               // Handle quotes
-              if ((char === '"' || char === "'") && (i === 0 || inputStr[i-1] !== '\\')) {
+              if ((char === '"' || char === "'") && (i === 0 || inputStr[i - 1] !== '\\')) {
                 if (!inQuotes) {
                   inQuotes = true;
                   quoteChar = char;
@@ -559,25 +528,25 @@ const setupCreationStream = () => {
                   quoteChar = '';
                 }
               }
-              
+
               // Handle parentheses depth (for nested blocks)
               if (!inQuotes) {
                 if (char === '(') depth++;
                 else if (char === ')') depth--;
               }
-              
+
               // Handle key-value separation
               if (char === ':' && depth === 0 && !inQuotes && readingKey) {
                 readingKey = false;
                 currentKey = currentKey.trim();
                 continue;
               }
-              
+
               // Handle comma separation
               if (char === ',' && depth === 0 && !inQuotes && !readingKey) {
                 // Store the key-value pair
                 currentValue = currentValue.trim();
-                
+
                 // Parse the value
                 if (currentValue.match(/^\w+\s*\(inputs\(/)) {
                   // This is a nested block
@@ -592,14 +561,14 @@ const setupCreationStream = () => {
                   // This is a string (remove quotes if present)
                   result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
                 }
-                
+
                 // Reset for next key-value pair
                 currentKey = '';
                 currentValue = '';
                 readingKey = true;
                 continue;
               }
-              
+
               // Accumulate characters
               if (readingKey) {
                 currentKey += char;
@@ -607,12 +576,12 @@ const setupCreationStream = () => {
                 currentValue += char;
               }
             }
-            
+
             // Handle the last key-value pair
             if (currentKey && currentValue) {
               currentKey = currentKey.trim();
               currentValue = currentValue.trim();
-              
+
               // Parse the value
               if (currentValue.match(/^\w+\s*\(inputs\(/)) {
                 // This is a nested block
@@ -628,27 +597,27 @@ const setupCreationStream = () => {
                 result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
               }
             }
-            
+
             return result;
           }
-          
+
           // Create the block and all its nested children
           const newBlock = parseAndCreateBlock(data.block_spec, true);
-          
+
           if (newBlock) {
             blockId = newBlock.id;
-            
+
             // If under_block_id is specified, attach the new block under the parent
             if (data.under_block_id) {
               const parentBlock = ws.getBlockById(data.under_block_id);
               if (parentBlock) {
                 console.log('[SSE CREATE] Attaching to parent block:', data.under_block_id);
-                
+
                 // Find an appropriate input to connect to
                 // Try common statement inputs first
                 const statementInputs = ['BODY', 'DO', 'THEN', 'ELSE', 'STACK'];
                 let connected = false;
-                
+
                 for (const inputName of statementInputs) {
                   const input = parentBlock.getInput(inputName);
                   if (input && input.type === Blockly.NEXT_STATEMENT) {
@@ -677,7 +646,7 @@ const setupCreationStream = () => {
                     }
                   }
                 }
-                
+
                 // If not connected to statement input, try value inputs
                 if (!connected) {
                   // Try all inputs
@@ -693,7 +662,7 @@ const setupCreationStream = () => {
                     }
                   }
                 }
-                
+
                 if (!connected) {
                   console.warn('[SSE CREATE] Could not find suitable connection point on parent block');
                 }
@@ -701,26 +670,26 @@ const setupCreationStream = () => {
                 console.warn('[SSE CREATE] Parent block not found:', data.under_block_id);
               }
             }
-            
+
             success = true;
             console.log('[SSE CREATE] Successfully created block with children:', blockId, newBlock.type);
           } else {
             throw new Error(`Failed to create block from specification`);
           }
-          
+
         } catch (e) {
           error = e.toString();
           console.error('[SSE CREATE] Error creating block:', e);
         }
-        
+
         // Send result back to backend immediately
-        console.log('[SSE CREATE] Sending creation result:', { 
-          request_id: data.request_id, 
-          success, 
+        console.log('[SSE CREATE] Sending creation result:', {
+          request_id: data.request_id,
+          success,
           error,
-          block_id: blockId 
+          block_id: blockId
         });
-        
+
         fetch('/creation_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -740,7 +709,7 @@ const setupCreationStream = () => {
       console.error('[SSE CREATE] Error processing message:', err);
     }
   };
-  
+
   eventSource.onerror = (error) => {
     console.error('[SSE CREATE] Connection error:', error);
     // Reconnect after 5 seconds
@@ -749,7 +718,7 @@ const setupCreationStream = () => {
       setupCreationStream();
     }, 5000);
   };
-  
+
   eventSource.onopen = () => {
     console.log('[SSE CREATE] Connected to creation stream');
   };
@@ -761,14 +730,14 @@ setupCreationStream();
 const setupVariableStream = () => {
   const eventSource = new EventSource('/variable_stream');
   const processedRequests = new Set(); // Track processed variable requests
-  
+
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      
+
       // Skip heartbeat messages
       if (data.heartbeat) return;
-      
+
       // Skip if we've already processed this request
       if (data.request_id && processedRequests.has(data.request_id)) {
         console.log('[SSE VARIABLE] Skipping duplicate variable request:', data.request_id);
@@ -779,21 +748,21 @@ const setupVariableStream = () => {
         // Clear after 10 seconds to allow retries if needed
         setTimeout(() => processedRequests.delete(data.request_id), 10000);
       }
-      
+
       if (data.variable_name && data.request_id) {
         console.log('[SSE VARIABLE] Received variable creation request:', data.request_id, data.variable_name);
-        
+
         let success = false;
         let error = null;
         let variableId = null;
-        
+
         try {
           // Create the variable using Blockly's variable map
           const variableName = data.variable_name;
-          
+
           // Use the workspace's variable map to create a new variable
           const variableModel = ws.getVariableMap().createVariable(variableName);
-          
+
           if (variableModel) {
             variableId = variableModel.getId();
             success = true;
@@ -801,20 +770,20 @@ const setupVariableStream = () => {
           } else {
             throw new Error('Failed to create variable model');
           }
-          
+
         } catch (e) {
           error = e.toString();
           console.error('[SSE VARIABLE] Error creating variable:', e);
         }
-        
+
         // Send result back to backend immediately
-        console.log('[SSE VARIABLE] Sending variable creation result:', { 
-          request_id: data.request_id, 
-          success, 
+        console.log('[SSE VARIABLE] Sending variable creation result:', {
+          request_id: data.request_id,
+          success,
           error,
-          variable_id: variableId 
+          variable_id: variableId
         });
-        
+
         fetch('/variable_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -834,7 +803,7 @@ const setupVariableStream = () => {
       console.error('[SSE VARIABLE] Error processing message:', err);
     }
   };
-  
+
   eventSource.onerror = (error) => {
     console.error('[SSE VARIABLE] Connection error:', error);
     // Reconnect after 5 seconds
@@ -843,7 +812,7 @@ const setupVariableStream = () => {
       setupVariableStream();
     }, 5000);
   };
-  
+
   eventSource.onopen = () => {
     console.log('[SSE VARIABLE] Connected to variable stream');
   };
@@ -862,14 +831,14 @@ const updateCode = () => {
   // Initialize the Python generator with the workspace before generating code
   // This ensures the Names database is properly set up for control flow blocks
   pythonGenerator.init(ws);
-  
+
   // Instead of using workspaceToCode which processes ALL blocks,
   // manually process only blocks connected to create_mcp or func_def
   let code = '';
-  
+
   // Get all top-level blocks (not connected to other blocks)
   const topBlocks = ws.getTopBlocks(false);
-  
+
   // Process only create_mcp and func_def blocks
   for (const block of topBlocks) {
     if (block.type === 'create_mcp' || block.type === 'func_def') {
@@ -888,7 +857,7 @@ const updateCode = () => {
 
   const vars = ws.getVariableMap().getAllVariables();
   globalVarString = vars.map(v => `${v.id} | ${v.name}`).join("\n");
-  
+
   const codeEl = document.querySelector('#generatedCode code');
 
   const call = `def llm_call(prompt, model):
@@ -998,12 +967,12 @@ const sendChatUpdate = async (chatCode, retryCount = 0) => {
     const response = await fetch("/update_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         code: chatCode,
         varString: globalVarString
       }),
     });
-    
+
     if (response.ok) {
       chatBackendAvailable = true;
       console.log("[Blockly] Sent updated Chat code to backend");
@@ -1013,7 +982,7 @@ const sendChatUpdate = async (chatCode, retryCount = 0) => {
   } catch (err) {
     console.warn(`[Blockly] Chat backend not ready (attempt ${retryCount + 1}):`, err.message);
     chatBackendAvailable = false;
-    
+
     // Queue this update for retry
     if (retryCount < 5) {
       const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
@@ -1039,7 +1008,7 @@ const updateChatCode = () => {
 
   // You can add any chat-specific preprocessing here
   // For example, adding headers or formatting
-  
+
   if (codeEl) {
     codeEl.textContent = globalChatCode;
   }
@@ -1050,15 +1019,15 @@ const updateChatCode = () => {
   } else {
     // Queue the update and try to establish connection
     chatUpdateQueue.push(globalChatCode);
-    
+
     // Clear any existing retry timeout
     if (chatRetryTimeout) {
       clearTimeout(chatRetryTimeout);
     }
-    
+
     // Try to connect to backend
     checkChatBackend();
-    
+
     // Set up periodic retry
     chatRetryTimeout = setTimeout(() => {
       checkChatBackend();
@@ -1080,7 +1049,7 @@ try {
       if (!block.inputRefBlocks_) {
         block.inputRefBlocks_ = new Map();
       }
-      
+
       // Create reference blocks for each input if they don't exist
       if (block.inputNames_ && block.inputNames_.length > 0) {
         for (let i = 0; i < block.inputNames_.length; i++) {
@@ -1090,13 +1059,13 @@ try {
           if (input && input.connection) {
             const connectedBlock = input.connection.targetBlock();
             const expectedType = `input_reference_${name}`;
-            
+
             // If there's already the correct block connected, just track it
             if (connectedBlock && connectedBlock.type === expectedType) {
               connectedBlock._ownerBlockId = block.id;
               connectedBlock.setDeletable(false);
               block.inputRefBlocks_.set(name, connectedBlock);
-            } 
+            }
             // Only create if input exists AND has no connected block yet
             else if (!connectedBlock) {
               // Create the reference block

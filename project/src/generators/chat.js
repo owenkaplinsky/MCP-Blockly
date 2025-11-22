@@ -53,7 +53,7 @@ forBlock['create_mcp'] = function (block, generator) {
     for (let r = 0; r < block.outputCount_; r++) {
       const outputName = (block.outputNames_ && block.outputNames_[r]) || `result${r}`;
       let returnValue = generator.valueToCode(block, 'R' + r, chatGenerator.ORDER_ATOMIC) || 'None';
-      
+
       // Replace placeholder args with actual names
       if (returnValue && block.inputNames_) {
         for (let j = 0; j < block.inputNames_.length; j++) {
@@ -61,7 +61,7 @@ forBlock['create_mcp'] = function (block, generator) {
           returnValue = returnValue.replace(new RegExp(`arg${j}\\b`, 'g'), paramName);
         }
       }
-      
+
       outputParams.push(`${outputName}: ${returnValue}`);
     }
   }
@@ -103,7 +103,7 @@ forBlock['func_def'] = function (block, generator) {
     for (let r = 0; r < block.outputCount_; r++) {
       const outputName = (block.outputNames_ && block.outputNames_[r]) || `output${r}`;
       let returnValue = generator.valueToCode(block, 'R' + r, chatGenerator.ORDER_ATOMIC) || 'None';
-      
+
       // Replace placeholder args with actual names
       if (returnValue && block.inputNames_) {
         for (let j = 0; j < block.inputNames_.length; j++) {
@@ -111,7 +111,7 @@ forBlock['func_def'] = function (block, generator) {
           returnValue = returnValue.replace(new RegExp(`arg${j}\\b`, 'g'), paramName);
         }
       }
-      
+
       outputParams.push(`${outputName}: ${returnValue}`);
     }
   }
@@ -132,10 +132,10 @@ forBlock['func_def'] = function (block, generator) {
 };
 
 // Handler for input reference blocks
-forBlock['input_reference'] = function(block, generator) {
-  const varName = block.getFieldValue('VARNAME') || 
-                  block.type.replace('input_reference_', '') || 
-                  'unnamed_arg';
+forBlock['input_reference'] = function (block, generator) {
+  const varName = block.getFieldValue('VARNAME') ||
+    block.type.replace('input_reference_', '') ||
+    'unnamed_arg';
   // Value blocks must return a tuple: [code, order]
   return [varName, chatGenerator.ORDER_ATOMIC];
 };
@@ -144,7 +144,7 @@ forBlock['input_reference'] = function(block, generator) {
 Object.assign(chatGenerator.forBlock, forBlock);
 
 // Override workspaceToCode to include standalone value blocks
-chatGenerator.workspaceToCode = function(workspace) {
+chatGenerator.workspaceToCode = function (workspace) {
   if (!workspace) {
     // Backwards compatibility from before there could be multiple workspaces.
     console.warn('No workspace specified in workspaceToCode call.  Guessing.');
@@ -189,21 +189,21 @@ chatGenerator.workspaceToCode = function(workspace) {
 
 // Override blockToCode to provide a catch-all handler
 const originalBlockToCode = chatGenerator.blockToCode.bind(chatGenerator);
-chatGenerator.blockToCode = function(block, opt_thisOnly) {
+chatGenerator.blockToCode = function (block, opt_thisOnly) {
   // Null check
   if (!block) {
     return '';
   }
-  
+
   // Check if it's an input reference block type
   if (block.type.startsWith('input_reference_')) {
-    const varName = block.getFieldValue('VARNAME') || 
-                    block.type.replace('input_reference_', '') || 
-                    'unnamed_arg';
+    const varName = block.getFieldValue('VARNAME') ||
+      block.type.replace('input_reference_', '') ||
+      'unnamed_arg';
     // Value blocks must return a tuple: [code, order]
     return [varName, this.ORDER_ATOMIC];
   }
-  
+
   // Try the normal generation first
   try {
     return originalBlockToCode(block, opt_thisOnly);
@@ -211,7 +211,7 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
     // Catch-all handler for blocks without specific generators
     const blockType = block.type;
     const inputs = [];
-    
+
     // Special handling for common blocks with field values
     if (blockType === 'text') {
       const text = block.getFieldValue('TEXT');
@@ -243,23 +243,23 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
         }
       }
     }
-    
+
     // Then get all value inputs (connected blocks)
     const inputList = block.inputList || [];
     for (const input of inputList) {
       if (input.type === Blockly.INPUT_VALUE && input.connection) {
         const inputName = input.name;
         const inputValue = this.valueToCode(block, inputName, this.ORDER_ATOMIC);
-        
+
         if (inputValue) {
           inputs.push(`${inputName}: ${inputValue}`);
         }
       }
     }
-    
+
     // Generate the standard format: name(inputs(...)) with block ID and pipe separator
     const code = `${block.id} | ${blockType}(inputs(${inputs.join(', ')}))`;
-    
+
     // Handle statement inputs (for blocks that have a body)
     let statements = '';
     for (const input of inputList) {
@@ -270,13 +270,13 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
         }
       }
     }
-    
+
     // Return appropriate format based on whether it's a value or statement block
     if (block.outputConnection) {
       // This is a value block (can be plugged into inputs)
       // Check if this block is connected to another block's input
       const isConnectedToInput = block.outputConnection && block.outputConnection.isConnected();
-      
+
       if (isConnectedToInput) {
         // When used as input to another block, don't include the ID
         const valueCode = `${blockType}(inputs(${inputs.join(', ')}))`;
@@ -291,13 +291,13 @@ chatGenerator.blockToCode = function(block, opt_thisOnly) {
     } else {
       // This is a statement block (has prev/next connections)
       const fullCode = code + (statements ? '\n' + statements : '');
-      
+
       // Handle the next block in the sequence if not opt_thisOnly
       if (!opt_thisOnly) {
         const nextCode = this.scrub_(block, fullCode, opt_thisOnly);
         return nextCode;
       }
-      
+
       return fullCode + '\n';
     }
   }
