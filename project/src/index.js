@@ -657,14 +657,19 @@ const setupUnifiedStream = () => {
 
           if (newBlock) {
             blockId = newBlock.id;
+            success = true; // Block was created successfully
 
-            // If input_name is specified, place the block into that MCP input directly
-            if (data.input_name) {
+            // Handle placement based on placement_type
+            if (data.placement_type === 'input') {
+              // Place into MCP block's output slot
+              // For type: 'input', find the first MCP block and use input_name for the slot
               const mcpBlock = ws.getBlocksByType('create_mcp')[0];
               if (mcpBlock) {
-                const input = mcpBlock.getInput(data.input_name);
+                // input_name specifies which output slot (e.g., "R0", "R1")
+                const inputSlot = data.input_name;
+                const input = mcpBlock.getInput(inputSlot);
                 if (input && input.connection) {
-                  console.log('[SSE CREATE] Placing block into MCP input:', data.input_name);
+                  console.log('[SSE CREATE] Placing block into MCP output slot:', inputSlot);
                   // Disconnect any existing block
                   const existingBlock = input.connection.targetBlock();
                   if (existingBlock) {
@@ -673,25 +678,27 @@ const setupUnifiedStream = () => {
                   // Connect the new block
                   if (newBlock.outputConnection) {
                     input.connection.connect(newBlock.outputConnection);
-                    console.log('[SSE CREATE] Successfully placed block into input:', data.input_name);
+                    console.log('[SSE CREATE] Successfully placed block into slot:', inputSlot);
                   } else {
-                    error = `Block has no output connection to connect to MCP input ${data.input_name}`;
+                    error = `Block has no output connection to connect to MCP slot ${inputSlot}`;
                     console.error('[SSE CREATE]', error);
                   }
                 } else {
-                  error = `MCP input not found: ${data.input_name}`;
+                  // Try to get all available inputs on the MCP block for debugging
+                  const availableInputs = mcpBlock.inputList.map(inp => inp.name).join(', ');
+                  error = `Output slot '${inputSlot}' not found. Available inputs: ${availableInputs}`;
                   console.error('[SSE CREATE]', error);
                 }
               } else {
-                error = 'No MCP block found to place this block into';
+                error = `No MCP block found in workspace`;
                 console.error('[SSE CREATE]', error);
               }
             }
-            // If under_block_id is specified, attach the new block under the parent
-            else if (data.under_block_id) {
-              const parentBlock = ws.getBlockById(data.under_block_id);
+            // If placement_type is 'under', attach the new block under the parent
+            else if (data.placement_type === 'under') {
+              const parentBlock = ws.getBlockById(data.blockID);
               if (parentBlock) {
-                console.log('[SSE CREATE] Attaching to parent block:', data.under_block_id);
+                console.log('[SSE CREATE] Attaching to parent block:', data.blockID);
 
                 // Find an appropriate input to connect to
                 // Try common statement inputs first
@@ -744,15 +751,18 @@ const setupUnifiedStream = () => {
                 }
 
                 if (!connected) {
-                  console.warn('[SSE CREATE] Could not find suitable connection point on parent block');
+                  error = `Could not find suitable connection point on parent block`;
+                  console.warn('[SSE CREATE]', error);
                 }
               } else {
-                console.warn('[SSE CREATE] Parent block not found:', data.under_block_id);
+                error = `Parent block not found: ${data.blockID}`;
+                console.warn('[SSE CREATE]', error);
               }
             }
 
-            success = true;
-            console.log('[SSE CREATE] Successfully created block with children:', blockId, newBlock.type);
+            if (success) {
+              console.log('[SSE CREATE] Successfully created block with children:', blockId, newBlock.type);
+            }
           } else {
             throw new Error(`Failed to create block from specification`);
           }
@@ -950,7 +960,7 @@ const updateCode = () => {
     code = "import numbers\n\n" + code;
   }
 
-  code = "import gradio as gr\n\n" + code
+  code = "import gradio as gr\nimport math\n\n" + code
 
   if (codeEl) {
     codeEl.textContent = code;

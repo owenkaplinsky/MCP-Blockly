@@ -135,13 +135,13 @@ def delete_block(block_id):
         traceback.print_exc()
         return f"Error deleting block: {str(e)}"
 
-def create_block(block_spec, under_block_id=None, input_name=None):
+def create_block(block_spec, blockID=None, placement_type=None, input_name=None):
     try:
         print(f"[CREATE REQUEST] Attempting to create block: {block_spec}")
-        if under_block_id:
-            print(f"[CREATE REQUEST] Under block ID: {under_block_id}")
+        if blockID:
+            print(f"[CREATE REQUEST] Placement type: {placement_type}, block ID: {blockID}")
         if input_name:
-            print(f"[CREATE REQUEST] Into input: {input_name}")
+            print(f"[CREATE REQUEST] Input name: {input_name}")
         
         # Generate a unique request ID
         import uuid
@@ -151,10 +151,12 @@ def create_block(block_spec, under_block_id=None, input_name=None):
         if request_id in creation_results:
             creation_results.pop(request_id)
         
-        # Add to creation queue with optional under_block_id and input_name
+        # Add to creation queue with optional blockID, placement_type, and input_name
         queue_data = {"request_id": request_id, "block_spec": block_spec}
-        if under_block_id:
-            queue_data["under_block_id"] = under_block_id
+        if blockID:
+            queue_data["blockID"] = blockID
+        if placement_type:
+            queue_data["placement_type"] = placement_type
         if input_name:
             queue_data["input_name"] = input_name
         creation_queue.put(queue_data)
@@ -169,11 +171,11 @@ def create_block(block_spec, under_block_id=None, input_name=None):
         while time.time() - start_time < timeout:
             if request_id in creation_results:
                 result = creation_results.pop(request_id)
-                print(f"[CREATE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
                 if result["success"]:
                     return f"[TOOL] Successfully created block: {result.get('block_id', 'unknown')}"
                 else:
-                    return f"[TOOL] Failed to create block: {result.get('error', 'Unknown error')}"
+                    error_msg = result.get('error') or 'Unknown error'
+                    return f"[TOOL] Failed to create block: {error_msg}"
             time.sleep(check_interval)
         
         print(f"[CREATE TIMEOUT] No response received for request {request_id} after {timeout} seconds")
@@ -296,7 +298,6 @@ async def unified_stream():
                     if request_key not in sent_requests:
                         sent_requests.add(request_key)
                         deletion_request["type"] = "delete"  # Add type identifier
-                        print(f"[SSE SEND] Sending deletion request for block: {block_id}")
                         yield f"data: {json.dumps(deletion_request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
@@ -314,7 +315,6 @@ async def unified_stream():
                     if request_key not in sent_requests:
                         sent_requests.add(request_key)
                         creation_request["type"] = "create"  # Add type identifier
-                        print(f"[SSE SEND] Sending creation request with ID: {request_id}")
                         yield f"data: {json.dumps(creation_request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
@@ -332,7 +332,6 @@ async def unified_stream():
                     if request_key not in sent_requests:
                         sent_requests.add(request_key)
                         variable_request["type"] = "variable"  # Add type identifier
-                        print(f"[SSE SEND] Sending variable creation request with ID: {request_id}")
                         yield f"data: {json.dumps(variable_request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
@@ -350,7 +349,6 @@ async def unified_stream():
                     if request_key not in sent_requests:
                         sent_requests.add(request_key)
                         edit_request["type"] = "edit_mcp"  # Add type identifier
-                        print(f"[SSE SEND] Sending edit MCP request with ID: {request_id}")
                         yield f"data: {json.dumps(edit_request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
@@ -387,16 +385,10 @@ async def unified_stream():
 async def creation_result(request: Request):
     data = await request.json()
     request_id = data.get("request_id")
-    success = data.get("success")
-    error = data.get("error")
-    block_id = data.get("block_id")
-    
-    print(f"[CREATION RESULT RECEIVED] request_id={request_id}, success={success}, error={error}, block_id={block_id}")
-    
+ 
     if request_id:
         # Store the result for the create_block function to retrieve
         creation_results[request_id] = data
-        print(f"[CREATION RESULT STORED] Results dict now has {len(creation_results)} items")
     
     return {"received": True}
 
@@ -443,12 +435,9 @@ async def edit_mcp_result(request: Request):
     success = data.get("success")
     error = data.get("error")
     
-    print(f"[EDIT MCP RESULT RECEIVED] request_id={request_id}, success={success}, error={error}")
-    
     if request_id:
         # Store the result for the edit_mcp function to retrieve
         edit_mcp_results[request_id] = data
-        print(f"[EDIT MCP RESULT STORED] Results dict now has {len(edit_mcp_results)} items")
     
     return {"received": True}
 
@@ -564,17 +553,16 @@ def create_gradio_interface():
     # Hardcoded system prompt
 
     SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
-    MCP lets AI systems define tools with specific inputs and outputs that any LLM can call.
 
     You'll receive the workspace state in this format:
     `blockId | block_name(inputs(input_name: value))`
 
-    **Special cases:**
+    Block ID parsing: Block IDs are everything before ` | ` (space-pipe-space). IDs are always complex/long strings.
+    Example: `?fHZRh^|us|9bECO![$= | text(inputs(TEXT: "hello"))`, ID is `?fHZRh^|us|9bECO![$=`
+    
+    Special cases:
     - `create_mcp` and `func_def` use `blockId | block_name(inputs(input_name: type), outputs(output_name: value))`
     - Indentation or nesting shows logic hierarchy (like loops or conditionals).
-    
-    Note that the `blockId` before the pipe `|` is each block's unique identifier. The ID can have a | in it. But,
-    the real separator will always have a space before and after it.
 
     ---
 
@@ -613,52 +601,53 @@ def create_gradio_interface():
 
     {blocks_context}
 
-    You can create new blocks by specifying the block type and its inputs, if any.
-    You cannot create a `create_mcp` block, but you may edit its inputs using the dedicated tool.
+    You cannot create a `create_mcp` block, but you may edit its inputs using the `edit_mcp` tool.
 
-    ### Placing Blocks in MCP Inputs
-    You can place blocks directly into the MCP block's inputs using the `input` parameter:
-    - Use `input: "X0"`, `input: "X1"`, etc. to place a block into an input slot
-    - Use `input: "R0"`, `input: "R1"`, etc. to place a block into an output slot
-    - **This feature can ONLY be used with the MCP block** - you cannot place blocks into inputs of other blocks this way
-    - The block will replace whatever is currently in that input
+    ### Block Types: Statement vs Value
+    **Statement blocks** are containers that hold other blocks inside them. They can have blocks above or below them:
+    - Loops (repeat, while, for)
+    - Conditionals (if/else)
+    - Any block that wraps other blocks
+    
+    **Value blocks** produce a value and plug into another block's input:
+    - Math blocks (math_number, math_arithmetic)
+    - Text blocks (text, text_join)
+    - Logic blocks (logic_compare, logic_operation)
+    - Any block that outputs a result for something else to use
 
-    Example: Create a text block and put it in the MCP's first input:
-    `text(inputs(TEXT: "hello"))` with `input: "X0"`
+    ### How to Place Blocks
 
-    There are two kinds of nesting:
+    **Placement types** - use `blockID` and `type` parameters:
+    
+    - `type: "under"` - For statement blocks inside containers. Create the container first, then create statement blocks using the container's ID.
+      Example: Create a loop first, then use `blockID: loopID, type: "under"` to place code inside it.
+      Also for stackable blocks: create one, get its ID, then create the next one with the previous block's ID and `type: "under"`.
+    
+    - `type: "input"` - ONLY for value blocks placed in MCP output slots. Provide `input_name` with the output slot name (R0, R1, R2, etc).
+      Example: `text(inputs(TEXT: "hello"))` with `type: "input", input_name: "R0"` places the text block in the MCP's first output slot.
 
-    1. **Statement-level nesting (main-level blocks)**  
-    These include loops, conditionals, and other blocks that contain statements.
-    - Create the outer block first.  
-    - Then create the inner block using the `under` parameter.  
+    **Value block nesting** - For value blocks inside other blocks: nest them directly in the create_block command (do not use `blockID` or `type`).
+    Example: `math_arithmetic(inputs(A: math_number(inputs(NUM: 5)), B: math_number(inputs(NUM: 3))))`
 
-    **A statement-level block must always have an explicit placement.**
-    - If it is top-level, state that it is top-level.  
-    - If it belongs inside another block, include the `under` parameter with the parent block ID.  
-    - Never create a statement-level block without placement.  
-    - If the parent block ID is not yet available, wait and do not create the child.
+    **CRITICAL for value block expressions**: You MUST build the entire nested structure in ONE create_block call. You cannot:
+    - Create blocks in stages
+    - Create intermediate blocks first and connect them later
+    - Break a value expression into multiple separate create_block calls
+    This is impossible. Value blocks can only be built by nesting them inside the create_block command.
+    Example: `math_arithmetic(inputs(A: math_number(inputs(NUM: 1)), B: math_arithmetic(inputs(A: math_number(inputs(NUM: 2)), B: math_number(inputs(NUM: 3))))))`
 
-    2. **Value-level nesting (output blocks)**  
-    These produce values and must be nested inside another block's input.
-    They must be fully nested in a *single* create call.  
-    Example:
-    `math_arithmetic(inputs(A: math_number(inputs(NUM: 1)), B: math_number(inputs(NUM: 1))))`
-
-    Rules for all value blocks:
-    - No raw strings, numbers, booleans, or values.  
-    - Strings must use a `text` block.  
-    - Numbers must use `math_number`.  
-    - Any value input must contain a block, never a raw value.
-
-    For blocks with infinite inputs (...N), inputs may be omitted.
-
-    You cannot put a new value-outputting block into an existing input after creation; if a value structure is needed, build the entire nested structure in the same call.
-
-    For stackable (top/bottom connection) blocks:
-    - Create one  
-    - Wait for the ID  
-    - Then create the next block to connect underneath using `under`.
+    ### Input Rules
+    Every block must have `inputs()`. For blocks that grow like `make_json` or `text_join`, add as many inputs as needed:
+    - `text_join(inputs(ADD0: text(inputs(TEXT: "hello")), ADD1: text(inputs(TEXT: "world"))))`
+    The blocks list will have comments saying something like "you can make as many N as you want" if this is allowed for that block.
+    
+    **String values must always be quoted with double quotes.** All configuration values (like operation names, parameter values, etc.) that are strings must be `"quoted"`:
+    - WRONG: `math_single(inputs(OP: ROOT, NUM: value)`
+    - CORRECT: `math_single(inputs(OP: "ROOT", NUM: value)`
+    
+    For value inputs, never use raw values. Always wrap in a block:
+    - WRONG: `math_arithmetic(inputs(A: 5, B: "hi"))`
+    - RIGHT: `math_arithmetic(inputs(A: math_number(inputs(NUM: 5)), B: text(inputs(TEXT: "hi"))))`
 
     You may NEVER create functions. You must only use code inside the MCP block itself.
 
@@ -681,7 +670,33 @@ def create_gradio_interface():
 
     ---
 
-    Users can see tool responses verbatim. Responses do not need to repeat tool output.
+    ## VALUE BLOCK CONSTRUCTION: ABSOLUTE RULE
+
+    **Value blocks and value expressions must be built entirely in a SINGLE create_block call.**
+
+    This is not negotiable. There is no alternative method. There is no workaround.
+
+    When you need to create value blocks (math blocks, text blocks, logic blocks, comparison blocks, or any block that produces a value for another block to use), you must nest all of them together in one create_block call. All child blocks, all nested blocks, all sub-expressions must be included in that single call.
+
+    **For any value expression, you have exactly ONE option: build it all in a single create_block call with all children nested inside.**
+
+    You cannot call create_block multiple times for one value expression. You cannot create intermediate blocks and connect them later. These are not possible.
+
+    **Correct:**
+    `text_join(inputs(ADD0: text(inputs(TEXT: "a")), ADD1: text(inputs(TEXT: "b")), ADD2: text(inputs(TEXT: "c"))))`
+    This is ONE call with all blocks nested in it.
+
+    **Prohibited:**
+    - `create_block(text(...))` then `create_block(text(...))` then `create_block(text(...))`: You cannot do this
+    - Create one block, get its ID, then try to place other blocks in its inputs later: You cannot do this
+    - Break a math expression across multiple calls: You cannot do this
+
+    **Statement blocks are different.** Loops and conditionals require sequential calls because you need the container's ID first to place code inside it. But value blocks are not containers. They are atomic. Build the entire structure in one call or not at all.
+
+    ---
+
+    Tool responses appear under the assistant role, but they are not part of your own words. Never treat tool output as
+    something you said, and never fabricate or echo fake tool outputs.
 
     ---
 
@@ -689,32 +704,18 @@ def create_gradio_interface():
 
     Before creating or deleting any blocks, always begin with a *Planning Phase*:
 
-    1. **Analyze the user's request and outline the full logic needed.**
-    - Identify required inputs  
-    - Identify required outputs  
-    - Identify intermediate computations  
-    - Identify loops, conditionals, and sub-logic
+    0. Acknowledge the `VALUE BLOCK CONSTRUCTION: ABSOLUTE RULE` section and how you are prohibited from doing multi step calls for value blocks, and must do it in one create block call.
 
-    2. **Produce a step-by-step construction plan** from outermost structures to nested value blocks.  
-    Include:
-    - Required block types  
-    - Which blocks are top-level  
-    - Which blocks must be nested  
-    - Which must be created via single-call value nesting  
-    - The order of tool calls  
-    - Where each block will be placed
+    1. **Analyze the user's request.** Identify all required inputs, outputs, intermediate steps, loops, and conditionals.
 
-    3. Create a pseudocode plan for exactly how you will implement it.
+    2. **Write pseudocode showing the complete flow** using readable syntax like function calls and control structures.
+    This is for *your own* understanding: work out the logic *before* translating to blocks.
+    Example: `for item in items: result = process(item); output = combine(result)`
 
-    4. Create a block-creation sequence that builds the complete structure in a single pass, starting with all outer blocks, then adding inner statement blocks, and finally generating fully nested value blocks, without revising or inserting blocks later.
+    3. **Create a build order**: which blocks are top-level, which nest inside others, which are value expressions that must be built in one call.
 
-    5. Perform the actions. Do not ask for approval or permission.
+    4. Perform the actions in order without asking for approval or asking to wait for intermediate results.
 
-    If a user request arrives without an existing plan, enter the Planning Phase first.
-
-    ---
-
-    Tool responses appear under the assistant role, but they are not part of your own words. Never treat tool output as something you said, and never fabricate or echo fake tool outputs.
     """
 
     tools = [
@@ -744,13 +745,18 @@ def create_gradio_interface():
                         "type": "string",
                         "description": "The create block command using the custom DSL format.",
                     },
-                    "under": {
+                    "blockID": {
                         "type": "string",
-                        "description": "The ID of the block that you want to place this under.",
+                        "description": "The ID of the target block for placement.",
                     },
-                    "input": {
+                    "type": {
                         "type": "string",
-                        "description": "The input name of the MCP block to place this block inside (e.g., 'X0', 'R0'). Can only be used with the MCP block.",
+                        "enum": ["under", "input"],
+                        "description": "Placement type. 'under' for statement blocks inside containers. 'input' only for value blocks in MCP outputs.",
+                    },
+                    "input_name": {
+                        "type": "string",
+                        "description": "Specific MCP input slot name when type is 'input'. Use 'RN', where N is the number of the output slot you want to put something into.",
                     },
                 },
                 "required": ["command"],
@@ -849,9 +855,6 @@ def create_gradio_interface():
         for human, ai in history:
             input_items.append({"role": "user", "content": human})
             input_items.append({"role": "assistant", "content": ai})
-        
-        # Debug
-        print(f"[DEBUG] Context received: {context if context else 'No context available'}")
         
         # Build instructions
         instructions = SYSTEM_PROMPT
@@ -1009,15 +1012,16 @@ def create_gradio_interface():
                         
                         elif function_name == "create_block":
                             command = function_args.get("command", "")
-                            under_block_id = function_args.get("under", None)
-                            input_name = function_args.get("input", None)
-                            if under_block_id is None and input_name is None:
+                            blockID = function_args.get("blockID", None)
+                            placement_type = function_args.get("type", None)
+                            input_name = function_args.get("input_name", None)
+                            if blockID is None:
                                 print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
-                            elif under_block_id:
-                                print(Fore.YELLOW + f"Agent created block with command `{command}`, under block ID `{under_block_id}`." + Style.RESET_ALL)
-                            elif input_name:
-                                print(Fore.YELLOW + f"Agent created block with command `{command}`, into input `{input_name}`." + Style.RESET_ALL)
-                            tool_result = create_block(command, under_block_id, input_name)
+                            else:
+                                print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
+                            if input_name:
+                                print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
+                            tool_result = create_block(command, blockID, placement_type, input_name)
                             result_label = "Create Operation"
                         
                         elif function_name == "create_variable":
