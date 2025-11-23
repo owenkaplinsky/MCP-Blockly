@@ -397,7 +397,7 @@ const setupUnifiedStream = () => {
 
         try {
           // Parse and create blocks recursively
-          function parseAndCreateBlock(spec, shouldPosition = false) {
+          function parseAndCreateBlock(spec, shouldPosition = false, placementType = null, placementBlockID = null) {
             // Match block_name(inputs(...)) with proper parenthesis matching
             const blockMatch = spec.match(/^(\w+)\s*\((.*)$/s);
 
@@ -503,6 +503,93 @@ const setupUnifiedStream = () => {
 
             console.log('[SSE CREATE] inputsContent to parse:', inputsContent);
 
+            // VALIDATION: Check for malformed input - if inputsContent contains unmatched parentheses
+            // If there are missing closing parentheses (1-2), automatically add them
+            let validateParenCount = 0;
+            let validateQuotes = false;
+            let validateQuoteChar = '';
+            for (let i = 0; i < inputsContent.length; i++) {
+              const char = inputsContent[i];
+              if ((char === '"' || char === "'") && (i === 0 || inputsContent[i - 1] !== '\\')) {
+                if (!validateQuotes) {
+                  validateQuotes = true;
+                  validateQuoteChar = char;
+                } else if (char === validateQuoteChar) {
+                  validateQuotes = false;
+                }
+              }
+              if (!validateQuotes) {
+                if (char === '(') validateParenCount++;
+                else if (char === ')') validateParenCount--;
+              }
+            }
+
+            // If parentheses are unbalanced, try to fix by adding closing parentheses
+            if (validateParenCount > 0) {
+              if (validateParenCount <= 2) {
+                console.log(`[SSE CREATE] Auto-fixing ${validateParenCount} missing closing parentheses in block '${blockType}'`);
+                
+                // Smart insertion: find the best place to insert closing parentheses
+                // Look for the last comma at depth 0 (which separates key-value pairs)
+                let bestInsertPos = inputsContent.length; // Default to end
+                let depth = 0;
+                let inQuotes = false;
+                let quoteChar = '';
+                
+                for (let i = inputsContent.length - 1; i >= 0; i--) {
+                  const char = inputsContent[i];
+                  
+                  // Handle quotes (from right to left)
+                  if ((char === '"' || char === "'") && (i === 0 || inputsContent[i - 1] !== '\\')) {
+                    if (!inQuotes) {
+                      inQuotes = true;
+                      quoteChar = char;
+                    } else if (char === quoteChar) {
+                      inQuotes = false;
+                    }
+                  }
+                  
+                  // Handle parentheses (from right to left, so reverse the logic)
+                  if (!inQuotes) {
+                    if (char === ')') depth++;
+                    else if (char === '(') depth--;
+                  }
+                  
+                  // Found the last comma at depth 0 - this separates the last nested block from following keys
+                  if (char === ',' && depth === 0 && !inQuotes) {
+                    bestInsertPos = i;
+                    break;
+                  }
+                }
+                
+                // Insert the closing parentheses at the best position
+                if (bestInsertPos < inputsContent.length && inputsContent[bestInsertPos] === ',') {
+                  // Insert right before the comma
+                  inputsContent = inputsContent.slice(0, bestInsertPos) + ')'.repeat(validateParenCount) + inputsContent.slice(bestInsertPos);
+                } else {
+                  // Fallback: insert at end
+                  inputsContent += ')'.repeat(validateParenCount);
+                }
+              } else {
+                throw new Error(`Malformed block specification for '${blockType}': too many unmatched opening parentheses (${validateParenCount}). This usually means a nested block specification is malformed. Received: ${inputsContent}`);
+              }
+            } else if (validateParenCount < 0) {
+              throw new Error(`Malformed block specification for '${blockType}': more closing parentheses than opening. Received: ${inputsContent}`);
+            }
+
+            // VALIDATION: Check if trying to place a value block under a statement block
+            // Value blocks have an output connection but no previous connection
+            if (placementType === 'under') {
+              // Check if this block type is a value block by temporarily creating it
+              const testBlock = ws.newBlock(blockType);
+              const isValueBlock = testBlock.outputConnection && !testBlock.previousConnection;
+              testBlock.dispose(true); // Remove the test block
+
+              if (isValueBlock) {
+                throw new Error(`Cannot place value block '${blockType}' under a statement block. Value blocks must be nested inside inputs of other blocks or placed in MCP outputs using type: "input".`);
+              }
+            }
+
             // Create the block
             const newBlock = ws.newBlock(blockType);
 
@@ -572,6 +659,28 @@ const setupUnifiedStream = () => {
                       }
                     }
                   }
+                }
+              } else if (blockType === 'text_join') {
+                // Special handling for text_join block (and similar blocks with ADD0, ADD1, ADD2...)
+                // Count ADD entries to determine how many items we need
+                let addCount = 0;
+                const addValues = {};
+
+                for (const [key, value] of Object.entries(inputs)) {
+                  const addMatch = key.match(/^ADD(\d+)$/);
+                  if (addMatch) {
+                    const index = parseInt(addMatch[1]);
+                    addCount = Math.max(addCount, index + 1);
+                    addValues[index] = value;
+                  }
+                }
+
+                console.log('[SSE CREATE] text_join detected with', addCount, 'items');
+
+                // Store pending text_join state to apply after initSvg()
+                if (addCount > 0) {
+                  newBlock.pendingAddCount_ = addCount;
+                  newBlock.pendingAddValues_ = addValues;
                 }
               } else if (blockType === 'controls_if') {
                 // Special handling for if/else blocks
@@ -723,6 +832,40 @@ const setupUnifiedStream = () => {
               }
             }
 
+            // Apply pending text_join mutations (must be after initSvg)
+            if (newBlock.type === 'text_join' && newBlock.pendingAddCount_ && newBlock.pendingAddCount_ > 0) {
+              console.log('[SSE CREATE] Applying text_join mutation with', newBlock.pendingAddCount_, 'items');
+
+              const addCount = newBlock.pendingAddCount_;
+              const addValues = newBlock.pendingAddValues_;
+
+              // Use loadExtraState if available to set the item count
+              if (typeof newBlock.loadExtraState === 'function') {
+                newBlock.loadExtraState({ itemCount: addCount });
+              } else {
+                // Fallback: set internal state
+                newBlock.itemCount_ = addCount;
+              }
+
+              // Now connect the ADD values
+              for (let i = 0; i < addCount; i++) {
+                const value = addValues[i];
+                if (value && typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
+                  // This is a nested block, create it recursively
+                  const childBlock = parseAndCreateBlock(value);
+
+                  // Connect the child block to the ADD input
+                  const input = newBlock.getInput('ADD' + i);
+                  if (input && input.connection && childBlock.outputConnection) {
+                    childBlock.outputConnection.connect(input.connection);
+                    console.log('[SSE CREATE] Connected ADD' + i + ' input');
+                  } else {
+                    console.warn('[SSE CREATE] Could not connect ADD' + i + ' input');
+                  }
+                }
+              }
+            }
+
             // Only position the top-level block
             if (shouldPosition) {
               // Find a good position that doesn't overlap existing blocks
@@ -849,7 +992,7 @@ const setupUnifiedStream = () => {
           }
 
           // Create the block and all its nested children
-          const newBlock = parseAndCreateBlock(data.block_spec, true);
+          const newBlock = parseAndCreateBlock(data.block_spec, true, data.placement_type, data.blockID);
 
           if (newBlock) {
             blockId = newBlock.id;
@@ -1131,7 +1274,7 @@ const updateCode = () => {
   }
 
   const vars = ws.getVariableMap().getAllVariables();
-  globalVarString = vars.map(v => `${v.id} | ${v.name}`).join("\n");
+  globalVarString = vars.map(v => `${v.id} → ${v.name}`).join("\n");
 
   const codeEl = document.querySelector('#generatedCode code');
 

@@ -1,60 +1,60 @@
 # AI
-llm_call(inputs(MODEL: "gpt-3.5-turbo-0125/gpt-4o-2024-08-06/gpt-5-mini-2025-08-07/gpt-5-2025-08-07/gpt-4o-search-preview-2025-03-11", PROMPT: value))
+VALUE: llm_call(inputs(MODEL: "gpt-3.5-turbo-0125/gpt-4o-2024-08-06/gpt-5-mini-2025-08-07/gpt-5-2025-08-07/gpt-4o-search-preview-2025-03-11", PROMPT: value))
 
 # JSON and API
-in_json(inputs(NAME: value, JSON: value)) // NAME is the value you want to extract from the JSON
-make_json(inputs(KEYN: value, FIELDN: value)) // N starts at 0; you can make as many N as you want. Each key goes with one field
-call_api(inputs(METHOD: "GET/POST/PUT/DELETE", URL: value, HEADERS: value)) // HEADERS is optional
+VALUE: in_json(inputs(NAME: value, JSON: value)) // NAME is the value you want to extract from the JSON
+VALUE: make_json(inputs(KEYN: value, FIELDN: value)) // N starts at 0; you can make as many N as you want. Each key goes with one field
+VALUE: call_api(inputs(METHOD: "GET/POST/PUT/DELETE", URL: value, HEADERS: value)) // HEADERS is optional
 
 # Logic
-controls_if(inputs(IF: value, IFELSEN0: value, ELSE)) // IF is REQUIRED (the condition). IFELSEN0, IFELSEN1, etc are OPTIONAL (additional else-if conditions). ELSE is OPTIONAL (no value needed, just include the word). DO NOT use input_name with controls_if creation; specify all conditions in the inputs. After creating, use input_name to place statements: "DO0" (IF then-statements), "DO1" (first ELSE-IF then-statements), "ELSE" (final else statements)
-logic_negate(inputs())
-logic_boolean(inputs(BOOL: "TRUE/FALSE"))
-logic_null(inputs())
-logic_compare(inputs(OP: "EQ/NEQ/LT/LTE/GT/GTE", A: value, B: value))
-logic_operation(inputs(OP: "AND/OR", A: value, B: value))
+STATEMENT: controls_if(inputs(IF: value, IFELSEN0: value, ELSE)) // IF is REQUIRED (the condition). IFELSEN0, IFELSEN1, etc are OPTIONAL (additional else-if conditions). ELSE is OPTIONAL (no value needed, just include the word). DO NOT use input_name with controls_if creation; specify all conditions in the inputs. After creating, use input_name to place statements: "DO0" (IF then-statements), "DO1" (first ELSE-IF then-statements), "ELSE" (final else statements)
+VALUE: logic_negate(inputs())
+VALUE: logic_boolean(inputs(BOOL: "TRUE/FALSE"))
+VALUE: logic_null(inputs())
+VALUE: logic_compare(inputs(OP: "EQ/NEQ/LT/LTE/GT/GTE", A: value, B: value))
+VALUE: logic_operation(inputs(OP: "AND/OR", A: value, B: value))
 
 # Loops
-controls_repeat_ext(inputs(TIMES: value))
-controls_whileUntil(inputs(MODE: "WHILE/UNTIL", BOOL: value))
-controls_for(inputs(VAR: value, FROM: value, TO: value, BY: value)) // VAR is a variable ID. BY is the increment amount
-controls_forEach(inputs(VAR: value), LIST: value) // VAR is a variable ID
-controls_flow_statements(inputs(FLOW: "CONTINUE/BREAK")) // Must go **inside** of a loop
+STATEMENT: controls_repeat_ext(inputs(TIMES: value))
+STATEMENT: controls_whileUntil(inputs(MODE: "WHILE/UNTIL", BOOL: value))
+STATEMENT: controls_for(inputs(VAR: value, FROM: value, TO: value, BY: value)) // VAR is a variable ID. BY is the increment amount
+STATEMENT: controls_forEach(inputs(VAR: value), LIST: value) // VAR is a variable ID
+STATEMENT: controls_flow_statements(inputs(FLOW: "CONTINUE/BREAK")) // Must go **inside** of a loop
 
 # Math
-math_number(inputs(NUM: value))
-math_arithmetic(inputs(OP: "ADD/MINUS/MULTIPLY/DIVIDE/POWER", A: value, B: value)) // A and B are required. They must be blocks, so you need to add math_number or an alternative
-math_single(inputs(OP: "ROOT/ABS/NEG/LN/LOG10/EXP/POW10", NUM: value)) // EXP is e^num
-math_number_property(inputs(PROPERTY: "EVEN/ODD/PRIME/WHOLE/POSITIVE/NEGATIVE", NUMBER_TO_CHECK: value)) // Boolean output
-math_round(inputs(OP: "ROUND/ROUNDUP/ROUNDDOWN", NUM: value))
-math_modulo(inputs(DIVIDEND: value, DIVISOR: value))
-math_constrain(VALUE: value, LOW: value, HIGH: value)
-math_random_int(inputs(FROM: value, TO: value))
+VALUE: math_number(inputs(NUM: value))
+VALUE: math_arithmetic(inputs(OP: "ADD/MINUS/MULTIPLY/DIVIDE/POWER", A: value, B: value)) // A and B are required. They must be blocks, so you need to add math_number or an alternative
+VALUE: math_single(inputs(OP: "ROOT/ABS/NEG/LN/LOG10/EXP/POW10", NUM: value)) // EXP is e^num
+VALUE: math_number_property(inputs(PROPERTY: "EVEN/ODD/PRIME/WHOLE/POSITIVE/NEGATIVE", NUMBER_TO_CHECK: value)) // Boolean output
+VALUE: math_round(inputs(OP: "ROUND/ROUNDUP/ROUNDDOWN", NUM: value))
+VALUE: math_modulo(inputs(DIVIDEND: value, DIVISOR: value))
+VALUE: math_constrain(VALUE: value, LOW: value, HIGH: value)
+VALUE: math_random_int(inputs(FROM: value, TO: value))
 
 # Text
-text(inputs(TEXT: value))
-text_length(VALUE: value)
-text_join(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
-text_isEmpty(inputs(VALUE: value)) // Boolean output
-text_changeCase(inputs(CASE: "UPPERCASE/LOWERCASE/TITLECASE", TEXT: value))
-text_getSubstring(inputs(WHERE1: "FROM_START/FROM_END/FIRST", WHERE2: "FROM_START/FROM_END/FIRST", STRING: value, AT1: value, AT2: value)) // For AT1 and AT2, only use them if the associated WHEREN is not "FROM_START"
-text_reverse(inputs(TEXT: value))
-text_count(inputs(SUB: value, TEXT: value)) // Integer output
-text_replace(inputs(FROM: value, TO: value, TEXT: value))
-text_trim(inputs(MODE: "BOTH/LEFT/RIGHT", TEXT: value)) // Trim spaces from text
+VALUE: text(inputs(TEXT: value))
+VALUE: text_length(VALUE: value)
+VALUE: text_join(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
+VALUE: text_isEmpty(inputs(VALUE: value)) // Boolean output
+VALUE: text_changeCase(inputs(CASE: "UPPERCASE/LOWERCASE/TITLECASE", TEXT: value))
+VALUE: text_getSubstring(inputs(WHERE1: "FROM_START/FROM_END/FIRST", WHERE2: "FROM_START/FROM_END/FIRST", STRING: value, AT1: value, AT2: value)) // For AT1 and AT2, only use them if the associated WHEREN is not "FROM_START"
+VALUE: text_reverse(inputs(TEXT: value))
+VALUE: text_count(inputs(SUB: value, TEXT: value)) // Integer output
+VALUE: text_replace(inputs(FROM: value, TO: value, TEXT: value))
+VALUE: text_trim(inputs(MODE: "BOTH/LEFT/RIGHT", TEXT: value)) // Trim spaces from text
 
 # Lists
-lists_length(inputs(VALUE: value))
-lists_isEmpty(inputs(VALUE: value)) // Boolean output
-lists_indexOf(inputs(END: "FIRST/LAST", VALUE: value, FIND: value))
-lists_reverse(inputs(LIST: value))
-lists_create_with(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
-lists_sort(inputs(TYPE: "NUMERIC/TEXT/IGNORE_CASE", DIRECTION: "1/-1")) // For direction, 1 is ascending, -1 is descending
+VALUE: lists_length(inputs(VALUE: value))
+VALUE: lists_isEmpty(inputs(VALUE: value)) // Boolean output
+VALUE: lists_indexOf(inputs(END: "FIRST/LAST", VALUE: value, FIND: value))
+VALUE: lists_reverse(inputs(LIST: value))
+VALUE: lists_create_with(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
+VALUE: lists_sort(inputs(TYPE: "NUMERIC/TEXT/IGNORE_CASE", DIRECTION: "1/-1")) // For direction, 1 is ascending, -1 is descending
 
 # Variables
-variables_get(inputs(VAR: value)) // VAR is a variable ID
-variables_set(inputs(VAR: value, VALUE: value)) // VAR is a variable ID
-math_change(inputs(VAR: value, DELTA: value)) // VAR is a variable ID. To use this, you MUST have used `variables_set` before this
+VALUE: variables_get(inputs(VAR: value)) // VAR is a variable ID
+VALUE: variables_set(inputs(VAR: value, VALUE: value)) // VAR is a variable ID
+VALUE: math_change(inputs(VAR: value, DELTA: value)) // VAR is a variable ID. To use this, you MUST have used `variables_set` before this
 
 # MCP Block inputs
-input_reference_NAME(inputs()) // Replace "NAME" with the name of the MCP block input. Any inputs for the one MCP block can have their blocks made with this. You may ONLY use this if the MCP has an input with this name. If needed you must create inputs and outputs first for the MCP block
+VALUE: input_reference_NAME(inputs()) // Replace "NAME" with the name of the MCP block input. Any inputs for the one MCP block can have their blocks made with this. You may ONLY use this if the MCP has an input with this name. If needed you must create inputs and outputs first for the MCP block

@@ -548,13 +548,13 @@ def create_gradio_interface():
     SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
 
     You'll receive the workspace state in this format:
-    `blockId | block_name(inputs(input_name: value))`
+    `blockId → block_name(inputs(input_name: value))`
 
-    Block ID parsing: Block IDs are everything before ` | ` (space-pipe-space). IDs are always complex/long strings.
-    Example: `?fHZRh^|us|9bECO![$= | text(inputs(TEXT: "hello"))`, ID is `?fHZRh^|us|9bECO![$=`
+    Block ID parsing: Block IDs are everything before ` → ` (space-arrow-space). IDs are always complex/long strings.
+    Example: `?fHZRh^|us|9bECO![$= → text(inputs(TEXT: "hello"))`, ID is `?fHZRh^|us|9bECO![$=`
     
     Special cases:
-    - `create_mcp` and `func_def` use `blockId | block_name(inputs(input_name: type), outputs(output_name: value))`
+    - `create_mcp` and `func_def` use `blockId → block_name(inputs(input_name: type), outputs(output_name: value))`
     - Indentation or nesting shows logic hierarchy (like loops or conditionals).
 
     ---
@@ -579,11 +579,11 @@ def create_gradio_interface():
     ---
 
     ### Deleting Blocks
-    - Each block starts with its ID, like `blockId | block_name(...)`.
+    - Each block starts with its ID, like `blockId → block_name(...)`.
     - To delete a block, specify its block ID.
     - Any block except the main `create_mcp` block can be deleted.
 
-    `blockId | code`
+    `blockId → code`
 
     Use the exact ID from the workspace.
 
@@ -597,16 +597,9 @@ def create_gradio_interface():
     You cannot create a `create_mcp` block, but you may edit its inputs using the `edit_mcp` tool.
 
     ### Block Types: Statement vs Value
-    **Statement blocks** are containers that hold other blocks inside them. They can have blocks above or below them:
-    - Loops (repeat, while, for)
-    - Conditionals (if/else)
-    - Any block that wraps other blocks
+    **Statement blocks** (loops, conditionals, any container) hold other blocks inside them and require sequential creation to get the container's ID first.
     
-    **Value blocks** produce a value and plug into another block's input:
-    - Math blocks (math_number, math_arithmetic)
-    - Text blocks (text, text_join)
-    - Logic blocks (logic_compare, logic_operation)
-    - Any block that outputs a result for something else to use
+    **Value blocks** (math, text, logic, comparison) produce values that plug into inputs and must be built entirely in one nested create_block call.
 
     ### How to Place Blocks
     
@@ -636,21 +629,20 @@ def create_gradio_interface():
     - `input_name: "DO1"`: first ELSE-IF branch
     - `input_name: "ELSE"`: ELSE branch
 
+    YOU CANNOT EDIT THE IF BLOCK LATER. IF YOU WILL NEED TO HAVE AN ELSE OR IFELSE LATER, YOU MUST CREATE IT WITH ALL BRANCHES FROM THE START.
+
     **Placement types** - use `blockID` and `type` parameters:
     
     - `type: "under"` - For statement blocks inside containers. Create the container first, then create statement blocks using the container's ID.
       Example: Create a loop first, then use `blockID: loopID, type: "under"` to place code inside it.
-      Also for stackable blocks: create one, get its ID, then create the next one with the previous block's ID and `type: "under"`.
-      **Optional: use `input_name` to specify which statement input to place the block in (e.g., "DO0", "DO1", "ELSE" for IF blocks).**
-      Example: `create_block(text_append(...), blockID: ifBlockID, type: "under", input_name: "DO0")` places the block in the first THEN branch of an IF block.
-      **CRITICAL: When using `type: "under"`, `input_name` must ONLY contain "DO0", "DO1", "ELSE", or other statement input names. NEVER use R0, R1, R2, etc. with `type: "under"`.**
+      Optional: use `input_name` for statement input names only (e.g., "DO0", "DO1", "ELSE" for IF blocks).
+      Example: `create_block(text_append(...), blockID: ifBlockID, type: "under", input_name: "DO0")` places the block in the IF branch.
     
-    - `type: "input"` - ONLY for value blocks placed in MCP output slots. Provide `input_name` with the output slot name (R0, R1, R2, etc).
+    - `type: "input"` - ONLY for value blocks placed in MCP output slots (R0, R1, R2, etc).
       Example: `text(inputs(TEXT: "hello"))` with `type: "input", input_name: "R0"` places the text block in the MCP's first output slot.
-    **CRITICAL:** NEVER use `type: "input"` and `input_name` for standalone value expressions that aren't being assigned to an MCP output. Only use these parameters
-    if the workspace shows the create_mcp block has explicit outputs defined (you will see `outputs(...)` in the state). If you cannot see outputs defined in the MCP
-    block, do NOT use `type: "input"` at all.
-    **CRITICAL: NEVER combine `type: "under"` with `input_name: "R0"`, `"R1"`, `"R2"`, etc. These R-numbered slots are only for `type: "input"` when placing into MCP outputs.**
+      Requirement: The create_mcp block must have explicit outputs defined (you will see `outputs(...)` in the workspace state). Do not use this if outputs are not visible.
+    
+    Key rule: Statement input names (DO0, DO1, ELSE) are for `type: "under"`. Output slot names (R0, R1, R2) are for `type: "input"`. Never mix them.
       
     **Value block nesting** - For value blocks inside other blocks: nest them directly in the create_block command (do not use `blockID` or `type`).
     Example: `math_arithmetic(inputs(A: math_number(inputs(NUM: 5)), B: math_number(inputs(NUM: 3))))`
@@ -671,6 +663,10 @@ def create_gradio_interface():
     - WRONG: `math_single(inputs(OP: ROOT, NUM: value)`
     - CORRECT: `math_single(inputs(OP: "ROOT", NUM: value)`
     
+    **Variable IDs must always be quoted with double quotes**, even if they look like identifiers. Variable IDs often contain special characters like parentheses, pipes, and semicolons. ALWAYS quote the variable ID:
+    - WRONG: variables_set(inputs(VAR: ..., VALUE: ...))
+    - CORRECT: variables_set(inputs(VAR: "...", VALUE: ...))
+
     For value inputs, never use raw values. Always wrap in a block:
     - WRONG: `math_arithmetic(inputs(A: 5, B: "hi"))`
     - RIGHT: `math_arithmetic(inputs(A: math_number(inputs(NUM: 5)), B: text(inputs(TEXT: "hi"))))`
@@ -682,7 +678,7 @@ def create_gradio_interface():
     ### Variables
     Variables appear as:
 
-    `varId | varName`
+    `varId → varName`
 
     ---
 
@@ -721,6 +717,29 @@ def create_gradio_interface():
 
     ---
 
+    ## EVERY VALUE MUST HAVE A DESTINATION
+
+    Before constructing ANY expression block (text_join, math operations, etc.), identify where it goes:
+    - Assigned to a variable (via set_var block)
+    - Passed as input to another block (nested in the create_block call)
+    - Placed in an MCP output slot (using type: "input" and input_name: "R#")
+
+    Do NOT create orphaned expression blocks with no destination. They serve no purpose.
+
+    Always build the container/assignment block FIRST, then construct the value expression INSIDE it, both in a single call.
+
+    ### No Early Returns in Conditionals
+
+    Blockly does not support early returns from within conditional branches. You MUST use a variable to store the result and return that variable in the MCP output:
+
+    1. Create a variable
+    2. In each branch, use a `set_var` block to assign the value to that variable. The VALUE input of set_var must contain your text_join or expression.
+    3. Return the variable as an MCP output
+    
+    Always collect results in a variable first; never create expression blocks that exist outside a set_var or MCP output.
+
+    ---
+
     Tool responses appear under the assistant role, but they are not part of your own words. Never treat tool output as
     something you said, and never fabricate or echo fake tool outputs.
 
@@ -738,20 +757,27 @@ def create_gradio_interface():
     This is for *your own* understanding: work out the logic *before* translating to blocks.
     Example: `for item in items: result = process(item); output = combine(result)`
 
-    3. **Create a build order**: which blocks are top-level, which nest inside others, which are value expressions that must be built in one call.
+    3. **Create a detailed, step-by-step to-do list**:  
+    List every action you will take, in exact order, with no omissions. Build from the outside in: create outer containers first, then add inner blocks inside them.
+
+    For every step, explicitly specify:  
+    - What action you will perform  
+    - Which block you are acting on  
+    - Which input or output slot you are using  
+    - All parameters involved (including type and input_name)  
+    - Every variable used and where it is used
+
+    For every IF statement you create, you must explicitly state:  
+    - The number of IFELSE branches (0, 1, 2, etc.)  
+    - The number of ELSE branches (0 or 1)  
+    - The exact condition that causes each branch to activate
+
+    THESE DECLARATIONS ARE REQUIRED EVERY TIME AN IF STATEMENT IS MENTIONED, AND YOU MUST ALWAYS PROVIDE EXACTLY THREE INTEGERS WITH NO EXCEPTIONS OR SUBSTITUTIONS. FAILURE TO DO SO IMMEDIATELY INVALIDATES THE RESPONSE IN ITS ENTIRETY.
+    YOU MUST HAVE EXPLICITLY SAID THESE THREE VALUES NO MATTER WHAT. THIS IS NON-NEGOTIABLE. THIS IS A HARD REQUIREMENT. ALWAYS SAY THIS, EVERY SINGLE TIME, NO MATTER WHAT.
 
     4. **Check the create_mcp block state:** Before using `type: "input"` and `input_name: "R0"`, verify that the create_mcp block has outputs defined in the workspace state. If you do not see `outputs(...)` in the create_mcp block, do NOT use these parameters.
 
-    5. **Understand MCP block placement:** When placing blocks under the MCP block itself (as opposed to inside its outputs):
-       - Use `type: "under"` with the MCP's `blockID`
-       - Do NOT use `input_name: "R0"`, `"R1"`, etc. (those are only for output slots)
-       - The MCP block is a statement container, not an output slot
-       - If you're defining what the MCP returns, you must either create output blocks inside the MCP, or edit the MCP block to add outputs first
-
-    6. Perform the actions in order without asking for approval or asking to wait for intermediate results.
-
-    """
-
+    5. Perform the actions in order without asking for approval or asking to wait for intermediate results."""
     tools = [
         {
             "type": "function",
@@ -775,13 +801,18 @@ def create_gradio_interface():
             "parameters": {
                 "type": "object",
                 "properties": {
+                    # Throwaway parameter to get the agent to think about IF rules.
+                    "if_notes": {
+                        "type": "string",
+                        "description": "If you are going to make an if statement, YOU ARE REQUIRED TO USE THIS. Write the amount if IF/IFELSE/ELSE you will need.",
+                    },
                     "command": {
                         "type": "string",
                         "description": "The create block command using the custom DSL format.",
                     },
                     "blockID": {
                         "type": "string",
-                        "description": "The ID of the target block for placement.",
+                        "description": "The ID of the target block for placement. Do not use this if your goal is to place a block detached in the workspace.",
                     },
                     "type": {
                         "type": "string",
