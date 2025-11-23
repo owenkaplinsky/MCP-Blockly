@@ -617,19 +617,21 @@ def create_gradio_interface():
     The entire IF/ELSE structure must be created in one `create_block` call.
 
     **Structure:**
-    `controls_if(inputs(IF: cond, IFELSEN0: cond2, IFELSEN1: cond3, ELSE))`
+    `controls_if(inputs(IF0: cond, IF1: cond2, IF2: cond3, ELSE))`
 
-    - `IF:` first condition (required)
-    - `IFELSEN#:` else-if conditions (optional)
+    - `IF0:` first/main condition (required)
+    - `IF1:`, `IF2:`, `IF3:`, etc. - else-if conditions (optional)
     - `ELSE` keyword (optional, no value)
 
     **Do NOT:**
     - Add ELSE or ELSE-IF later using `input_name`
     - Give ELSE a value
+    - Use `IF:` alone without a number (must be `IF0`)
 
     **Correct placement after creation:**
-    - `input_name: "DO0"`: IF branch
-    - `input_name: "DO1"`: first ELSE-IF branch
+    - `input_name: "DO0"`: Main IF branch
+    - `input_name: "DO1"`: First ELSE-IF branch
+    - `input_name: "DO2"`: Second ELSE-IF branch
     - `input_name: "ELSE"`: ELSE branch
 
     YOU CANNOT EDIT THE IF BLOCK LATER. IF YOU WILL NEED TO HAVE AN ELSE OR IFELSE LATER, YOU MUST CREATE IT WITH ALL BRANCHES FROM THE START.
@@ -731,6 +733,8 @@ def create_gradio_interface():
 
     Always build the container/assignment block FIRST, then construct the value expression INSIDE it, both in a single call.
 
+    Creating variables is not sufficient on its own. In addition to that, you MUST not forget to return the variable in the MCP block output slot.
+
     ### No Early Returns in Conditionals
 
     Blockly does not support early returns from within conditional branches. You MUST use a variable to store the result and return that variable in the MCP output:
@@ -753,6 +757,7 @@ def create_gradio_interface():
     Before creating or deleting any blocks, always begin with a *Planning Phase*:
 
     0. Acknowledge the `VALUE BLOCK CONSTRUCTION: ABSOLUTE RULE` section and how you are prohibited from doing multi step calls for value blocks, and must do it in one create block call.
+    Then also acknowledge that you are required to set values in all MCP block output slots, and cannot forget and leave them empty.
 
     1. **Analyze the user's request.** Identify all required inputs, outputs, intermediate steps, loops, and conditionals.
 
@@ -807,7 +812,7 @@ def create_gradio_interface():
                     # Throwaway parameter to get the agent to think about IF rules.
                     "if_notes": {
                         "type": "string",
-                        "description": "If you are going to make an if statement, YOU ARE REQUIRED TO USE THIS. Write the amount if IF/IFELSE/ELSE you will need.",
+                        "description": "If you are going to make an if statement, YOU ARE REQUIRED TO USE THIS. Write the amount if IF/IFELSE/ELSE you will need. You MUST use this amount in the command. If you aren't making an if, say 'N/A'.",
                     },
                     "command": {
                         "type": "string",
@@ -827,7 +832,7 @@ def create_gradio_interface():
                         "description": "ONLY for two cases: placing value blocks into MCP output slots using 'R<N>', and placing statement blocks into specific branches of controls_if (DO0, DO1, ELSE). NEVER USE THIS PARAMETER UNLESS YOU ARE DOING ONE OF THOSE TWO EXACT THINGS.",
                     },
                 },
-                "required": ["command"],
+                "required": ["if_notes", "command"],
             }
         },
         {
@@ -1048,7 +1053,6 @@ def create_gradio_interface():
                 
                 # PROCESSING TOOL CALLS
                 if tool_calls:
-
                     # Show assistant text FIRST if it exists
                     if ai_response:
                         if accumulated_response:

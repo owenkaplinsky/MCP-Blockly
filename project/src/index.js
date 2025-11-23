@@ -691,9 +691,10 @@ const setupUnifiedStream = () => {
                 console.log('[SSE CREATE] controls_if inputs:', inputs);
 
                 // Process condition inputs and store block objects
+                // Blockly uses IF0, IF1, IF2... not IF, IFELSEN0, IFELSEN1
                 for (const [key, value] of Object.entries(inputs)) {
-                  if (key === 'IF' || key.match(/^IFELSEN\d+$/)) {
-                    // This is a condition block specification (not a value for a field)
+                  if (key.match(/^IF\d+$/)) {
+                    // This is a condition block specification (IF0, IF1, IF2, ...)
                     conditionBlocks[key] = value;
 
                     if (typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
@@ -709,10 +710,10 @@ const setupUnifiedStream = () => {
                   }
                 }
 
-                // Count IFELSEN blocks
+                // Count IFELSE (else-if) blocks: IF1, IF2, IF3... (IF0 is the main if, not an else-if)
                 let elseIfCount = 0;
                 for (const key of Object.keys(conditionBlocks)) {
-                  if (key.match(/^IFELSEN\d+$/)) {
+                  if (key.match(/^IF\d+$/) && key !== 'IF0') {
                     elseIfCount++;
                   }
                 }
@@ -813,35 +814,33 @@ const setupUnifiedStream = () => {
                   const conditionBlockObjects = newBlock.pendingConditionBlockObjects_;
                   console.log('[SSE CREATE] Connecting condition blocks:', Object.keys(conditionBlockObjects));
 
-                  // Connect the IF condition
-                  if (conditionBlockObjects['IF']) {
-                    const ifBlock = conditionBlockObjects['IF'];
+                  // Connect the IF0 condition
+                  if (conditionBlockObjects['IF0']) {
+                    const ifBlock = conditionBlockObjects['IF0'];
                     const input = newBlock.getInput('IF0');
                     console.log('[SSE CREATE] IF0 input exists?', !!input);
                     if (input && input.connection && ifBlock.outputConnection) {
                       ifBlock.outputConnection.connect(input.connection);
-                      console.log('[SSE CREATE] Connected IF condition');
+                      console.log('[SSE CREATE] Connected IF0 condition');
                     } else {
-                      console.warn('[SSE CREATE] Could not connect IF - input:', !!input, 'childConnection:', !!ifBlock.outputConnection);
+                      console.warn('[SSE CREATE] Could not connect IF0 - input:', !!input, 'childConnection:', !!ifBlock.outputConnection);
                     }
                   }
 
-                  // Connect IFELSEN conditions
-                  console.log('[SSE CREATE] Processing', newBlock.pendingElseifCount_, 'IFELSEN conditions');
-                  for (let i = 0; i < newBlock.pendingElseifCount_; i++) {
-                    const key = 'IFELSEN' + i;
+                  // Connect IF1, IF2, IF3... (else-if conditions)
+                  console.log('[SSE CREATE] Processing', newBlock.pendingElseifCount_, 'else-if conditions');
+                  for (let i = 1; i <= newBlock.pendingElseifCount_; i++) {
+                    const key = 'IF' + i;
                     console.log('[SSE CREATE] Looking for key:', key, 'exists?', !!conditionBlockObjects[key]);
                     if (conditionBlockObjects[key]) {
                       const ifElseBlock = conditionBlockObjects[key];
-                      // IFELSEN blocks connect to IF1, IF2, etc.
-                      const inputName = 'IF' + (i + 1);
-                      const input = newBlock.getInput(inputName);
-                      console.log('[SSE CREATE] Input', inputName, 'exists?', !!input);
+                      const input = newBlock.getInput(key);
+                      console.log('[SSE CREATE] Input', key, 'exists?', !!input);
                       if (input && input.connection && ifElseBlock.outputConnection) {
                         ifElseBlock.outputConnection.connect(input.connection);
-                        console.log('[SSE CREATE] Connected IFELSEN' + i + ' condition to ' + inputName);
+                        console.log('[SSE CREATE] Connected', key, 'condition');
                       } else {
-                        console.warn('[SSE CREATE] Could not connect IFELSEN' + i + ' - input ' + inputName + ' exists:', !!input, 'has connection:', input ? !!input.connection : false, 'childHasOutput:', !!ifElseBlock.outputConnection);
+                        console.warn('[SSE CREATE] Could not connect', key, '- input exists:', !!input, 'has connection:', input ? !!input.connection : false, 'childHasOutput:', !!ifElseBlock.outputConnection);
                       }
                     }
                   }

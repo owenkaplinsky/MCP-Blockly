@@ -7,7 +7,7 @@ VALUE: make_json(inputs(KEYN: value, FIELDN: value)) // N starts at 0; you can m
 VALUE: call_api(inputs(METHOD: "GET/POST/PUT/DELETE", URL: value, HEADERS: value)) // HEADERS is optional
 
 # Logic
-STATEMENT: controls_if(inputs(IF: value, IFELSEN0: value, ELSE)) // IF is REQUIRED (the condition). IFELSEN0, IFELSEN1, etc are OPTIONAL (additional else-if conditions). ELSE is OPTIONAL (no value needed, just include the word). DO NOT use input_name with controls_if creation; specify all conditions in the inputs. After creating, use input_name to place statements: "DO0" (IF then-statements), "DO1" (first ELSE-IF then-statements), "ELSE" (final else statements)
+STATEMENT: controls_if(inputs(IF0: value, IF1: value, IF2: value, ELSE)) // IF0 is REQUIRED (the main condition). IF1, IF2, IF3, etc are OPTIONAL (additional else-if conditions). ELSE is OPTIONAL (no value needed, just include the word). DO NOT use input_name with controls_if creation; specify all conditions in the inputs. After creating, use input_name to place statements: "DO0" (IF then-statements), "DO1" (first ELSE-IF then-statements), "DO2" (second ELSE-IF then-statements), "ELSE" (final else statements)
 VALUE: logic_negate(inputs())
 VALUE: logic_boolean(inputs(BOOL: "TRUE/FALSE"))
 VALUE: logic_null(inputs())
