@@ -166,6 +166,21 @@ def execute_blockly_logic(user_inputs):
                     elif anno == str or anno == inspect._empty:
                         typed_args.append(str(arg))
                     else:
+                        # Handle remaining type cases
+                        typed_args.append(arg)
+                except ValueError:
+                    # If type conversion fails, try to coerce intelligently
+                    if anno == float:
+                        try:
+                            typed_args.append(float(arg))
+                        except Exception:
+                            typed_args.append(arg)
+                    elif anno == int:
+                        try:
+                            typed_args.append(int(float(arg)))  # Allow "3.5" to become 3
+                        except Exception:
+                            typed_args.append(arg)
+                    else:
                         typed_args.append(arg)
                 except Exception:
                     # If conversion fails, pass the raw input
@@ -223,14 +238,24 @@ def build_interface():
                         param = param.strip()
                         if ':' in param:
                             name, type_hint = param.split(':')
+                            type_hint = type_hint.strip()
+                            # Convert Python type hints to display names
+                            if 'int' in type_hint:
+                                display_type = 'integer'
+                            elif 'float' in type_hint:
+                                display_type = 'float'
+                            elif 'list' in type_hint:
+                                display_type = 'list'
+                            else:
+                                display_type = 'string'
                             params.append({
                                 'name': name.strip(),
-                                'type': type_hint.strip()
+                                'type': display_type
                             })
                         else:
                             params.append({
                                 'name': param,
-                                'type': 'str'
+                                'type': 'string'
                             })
 
             # Detect output count (out_amt = N)
@@ -254,7 +279,14 @@ def build_interface():
                     out_types = []
             else:
                 out_types = []
-            out_types = ["str" if t == "string" else "int" if t == "integer" else t for t in out_types]
+            # Convert output types: handle string, integer, float, list
+            out_types = [
+                "string" if t == "str" else 
+                "integer" if t == "int" else 
+                "float" if t == "float" else 
+                "list" if t == "list" else t 
+                for t in out_types
+            ]
 
             # Update visibility + clear output fields
             output_updates = []

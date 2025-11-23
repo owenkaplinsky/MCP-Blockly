@@ -398,15 +398,20 @@ const setupUnifiedStream = () => {
         try {
           // Parse and create blocks recursively
           function parseAndCreateBlock(spec, shouldPosition = false) {
-            // Match block_name(inputs(...))
-            const blockMatch = spec.match(/^(\w+)\s*\((.+)\)$/s);
+            // Match block_name(inputs(...)) with proper parenthesis matching
+            const blockMatch = spec.match(/^(\w+)\s*\((.*)$/s);
 
             if (!blockMatch) {
               throw new Error(`Invalid block specification format: ${spec}`);
             }
 
             const blockType = blockMatch[1];
-            const content = blockMatch[2].trim();
+            let content = blockMatch[2].trim();
+
+            // Remove the last closing parenthesis and trim
+            if (content.endsWith(')')) {
+              content = content.slice(0, -1).trim();
+            }
 
             console.log('[SSE CREATE] Parsing block:', blockType, 'with content:', content);
 

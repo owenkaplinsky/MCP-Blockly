@@ -301,6 +301,7 @@ Blockly.Extensions.registerMutator(
           const name = this.inputNames_[j] || type;
           let check = null;
           if (type === 'integer') check = 'Number';
+          if (type === 'float') check = 'Number';
           if (type === 'string') check = 'String';
 
           const existingRefBlock = this.inputRefBlocks_.get(name);
@@ -370,6 +371,7 @@ Blockly.Extensions.registerMutator(
             const name = this.outputNames_[j] || ('output' + j);
             let check = null;
             if (type === 'integer') check = 'Number';
+            if (type === 'float') check = 'Number';
             if (type === 'string') check = 'String';
 
             const returnInput = this.appendValueInput('R' + j);
@@ -430,6 +432,7 @@ Blockly.Extensions.registerMutator(
           const name = this.inputNames_[j] || ('arg' + j);
           let check = null;
           if (type === 'integer') check = 'Number';
+          if (type === 'float') check = 'Number';
           if (type === 'string') check = 'String';
 
           const input = this.appendValueInput('X' + j);
@@ -459,6 +462,7 @@ Blockly.Extensions.registerMutator(
           const name = this.outputNames_[j] || ('output' + j);
           let check = null;
           if (type === 'integer') check = 'Number';
+          if (type === 'float') check = 'Number';
           if (type === 'string') check = 'String';
 
           const returnInput = this.appendValueInput('R' + j);
@@ -497,6 +501,7 @@ const container_input = {
       options: [
         ["String", "string"],
         ["Integer", "integer"],
+        ["Float", "float"],
         ["List", "list"],
       ]
     },
@@ -517,6 +522,7 @@ const container_output = {
       options: [
         ["String", "string"],
         ["Integer", "integer"],
+        ["Float", "float"],
         ["List", "list"],
       ]
     },

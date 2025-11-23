@@ -31,6 +31,9 @@ forBlock['create_mcp'] = function (block, generator) {
         case 'integer':
           pyType = 'int';
           break;
+        case 'float':
+          pyType = 'float';
+          break;
         case 'string':
           pyType = 'str';
           break;
@@ -68,6 +71,8 @@ forBlock['create_mcp'] = function (block, generator) {
       const outputType = block.outputTypes_[r] || 'string';
       if (outputType === 'integer' && returnValue) {
         returnValue = `int(${returnValue})`;
+      } else if (outputType === 'float' && returnValue) {
+        returnValue = `float(${returnValue})`;
       }
 
       returnValues.push(returnValue || 'None');
@@ -101,6 +106,9 @@ forBlock['create_mcp'] = function (block, generator) {
         case 'integer':
           gradioInputs.push('gr.Number()');
           break;
+        case 'float':
+          gradioInputs.push('gr.Number()');
+          break;
         case 'string':
           gradioInputs.push('gr.Textbox()');
           break;
@@ -122,6 +130,9 @@ forBlock['create_mcp'] = function (block, generator) {
       const type = block.outputTypes_[k];
       switch (type) {
         case 'integer':
+          gradioOutputs.push('gr.Number()');
+          break;
+        case 'float':
           gradioOutputs.push('gr.Number()');
           break;
         case 'string':
@@ -179,6 +190,9 @@ forBlock['func_def'] = function (block, generator) {
         case 'integer':
           pyType = 'int';
           break;
+        case 'float':
+          pyType = 'float';
+          break;
         case 'string':
           pyType = 'str';
           break;
@@ -214,6 +228,8 @@ forBlock['func_def'] = function (block, generator) {
       const outputType = block.outputTypes_[r] || 'string';
       if (outputType === 'integer' && returnValue) {
         returnValue = `int(${returnValue})`;
+      } else if (outputType === 'float' && returnValue) {
+        returnValue = `float(${returnValue})`;
       }
 
       returnValues.push(returnValue || 'None');
@@ -247,6 +263,9 @@ forBlock['func_def'] = function (block, generator) {
       switch (type) {
         case 'integer':
           pyType = 'int';
+          break;
+        case 'float':
+          pyType = 'float';
           break;
         case 'string':
           pyType = 'str';

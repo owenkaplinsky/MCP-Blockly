@@ -790,7 +790,7 @@ def create_gradio_interface():
                             "type": "object",
                             "properties": {
                                 "name": { "type": "string" },
-                                "type": { "type": "string", "enum": ["string", "integer", "list"] }
+                                "type": { "type": "string", "enum": ["string", "integer", "float", "list"] }
                             },
                             "required": ["name", "type"]
                         }
@@ -801,7 +801,7 @@ def create_gradio_interface():
                             "type": "object",
                             "properties": {
                                 "name": { "type": "string" },
-                                "type": { "type": "string", "enum": ["string", "integer", "list"] }
+                                "type": { "type": "string", "enum": ["string", "integer", "float", "list"] }
                             },
                             "required": ["name", "type"]
                         }
