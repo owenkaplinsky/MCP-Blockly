@@ -528,17 +528,17 @@ const setupUnifiedStream = () => {
             if (validateParenCount > 0) {
               if (validateParenCount <= 2) {
                 console.log(`[SSE CREATE] Auto-fixing ${validateParenCount} missing closing parentheses in block '${blockType}'`);
-                
+
                 // Smart insertion: find the best place to insert closing parentheses
                 // Look for the last comma at depth 0 (which separates key-value pairs)
                 let bestInsertPos = inputsContent.length; // Default to end
                 let depth = 0;
                 let inQuotes = false;
                 let quoteChar = '';
-                
+
                 for (let i = inputsContent.length - 1; i >= 0; i--) {
                   const char = inputsContent[i];
-                  
+
                   // Handle quotes (from right to left)
                   if ((char === '"' || char === "'") && (i === 0 || inputsContent[i - 1] !== '\\')) {
                     if (!inQuotes) {
@@ -548,20 +548,20 @@ const setupUnifiedStream = () => {
                       inQuotes = false;
                     }
                   }
-                  
+
                   // Handle parentheses (from right to left, so reverse the logic)
                   if (!inQuotes) {
                     if (char === ')') depth++;
                     else if (char === '(') depth--;
                   }
-                  
+
                   // Found the last comma at depth 0 - this separates the last nested block from following keys
                   if (char === ',' && depth === 0 && !inQuotes) {
                     bestInsertPos = i;
                     break;
                   }
                 }
-                
+
                 // Insert the closing parentheses at the best position
                 if (bestInsertPos < inputsContent.length && inputsContent[bestInsertPos] === ',') {
                   // Insert right before the comma
@@ -683,22 +683,25 @@ const setupUnifiedStream = () => {
                   newBlock.pendingAddValues_ = addValues;
                 }
               } else if (blockType === 'controls_if') {
-                // Special handling for if/else blocks
-                // IF is required, IFELSEN0, IFELSEN1, etc are optional, ELSE is optional
-                // Each condition block goes into IF, IFELSEN0, IFELSEN1, etc inputs
-
-                // Count how many IF/IFELSEN conditions we have
-                let conditionCount = 0;
+                // Special handling for if/else blocks - create condition blocks now and store references
                 const conditionBlocks = {};
+                const conditionBlockObjects = {};
                 let hasElse = false;
 
                 console.log('[SSE CREATE] controls_if inputs:', inputs);
 
+                // Process condition inputs and store block objects
                 for (const [key, value] of Object.entries(inputs)) {
-                  if (key === 'IF') {
-                    conditionBlocks['IF'] = value;
-                  } else if (key.match(/^IFELSEN\d+$/)) {
+                  if (key === 'IF' || key.match(/^IFELSEN\d+$/)) {
+                    // This is a condition block specification (not a value for a field)
                     conditionBlocks[key] = value;
+
+                    if (typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
+                      // Create the condition block now
+                      const conditionBlock = parseAndCreateBlock(value);
+                      conditionBlockObjects[key] = conditionBlock;
+                      console.log('[SSE CREATE] Created condition block for', key);
+                    }
                   } else if (key === 'ELSE' && value === true) {
                     // ELSE is a marker with no value (set to true by parseInputs)
                     console.log('[SSE CREATE] Detected ELSE marker');
@@ -706,47 +709,24 @@ const setupUnifiedStream = () => {
                   }
                 }
 
-                console.log('[SSE CREATE] controls_if parsed: hasElse =', hasElse);
-
-                // Create inputs for each condition
-                if (conditionBlocks['IF']) {
-                  const ifValue = conditionBlocks['IF'];
-                  if (typeof ifValue === 'string' && ifValue.match(/^\w+\s*\(inputs\(/)) {
-                    const childBlock = parseAndCreateBlock(ifValue);
-                    const input = newBlock.getInput('IF0');
-                    if (input && input.connection && childBlock.outputConnection) {
-                      childBlock.outputConnection.connect(input.connection);
-                    }
-                  }
-                }
-
-                // Handle IFELSEN conditions
+                // Count IFELSEN blocks
                 let elseIfCount = 0;
-                for (const [key, value] of Object.entries(conditionBlocks)) {
-                  const elseIfMatch = key.match(/^IFELSEN(\d+)$/);
-                  if (elseIfMatch) {
-                    const elseIfValue = value;
-                    if (typeof elseIfValue === 'string' && elseIfValue.match(/^\w+\s*\(inputs\(/)) {
-                      // Blockly uses a mutator to add IF/ELSE IF blocks, so we need to configure that
-                      // For now, just try to create the structure
-                      const childBlock = parseAndCreateBlock(elseIfValue);
-
-                      // The inputs will be IF1, IF2, etc. for additional conditions
-                      const ifInputName = 'IF' + (elseIfCount + 1);
-                      const input = newBlock.getInput(ifInputName);
-                      if (input && input.connection && childBlock.outputConnection) {
-                        childBlock.outputConnection.connect(input.connection);
-                      }
-                      elseIfCount++;
-                    }
+                for (const key of Object.keys(conditionBlocks)) {
+                  if (key.match(/^IFELSEN\d+$/)) {
+                    elseIfCount++;
                   }
                 }
 
-                // Store these for later - we'll apply them after initSvg()
+                console.log('[SSE CREATE] controls_if parsed: elseIfCount =', elseIfCount, 'hasElse =', hasElse);
+
+                // Store condition block OBJECTS for later - we'll connect them after mutator creates inputs
+                newBlock.pendingConditionBlockObjects_ = conditionBlockObjects;
                 newBlock.pendingElseifCount_ = elseIfCount;
                 newBlock.pendingElseCount_ = hasElse ? 1 : 0;
-              } else {
-                // Normal block handling
+                console.log('[SSE CREATE] Stored pending condition block objects:', Object.keys(conditionBlockObjects));
+                // Skip normal input processing for controls_if - we handle conditions after mutator
+              } else if (blockType !== 'controls_if') {
+                // Normal block handling (skip for controls_if which is handled specially)
                 for (const [key, value] of Object.entries(inputs)) {
                   if (typeof value === 'string') {
                     // Check if this is a nested block specification
@@ -792,44 +772,97 @@ const setupUnifiedStream = () => {
 
             // Initialize the block (renders it)
             newBlock.initSvg();
+            console.log('[SSE CREATE] === VERSION 2.0 - After initSvg, block type:', newBlock.type);
 
             // Apply pending controls_if mutations (must be after initSvg)
-            if (newBlock.type === 'controls_if' && (newBlock.pendingElseifCount_ > 0 || newBlock.pendingElseCount_ > 0)) {
-              console.log('[SSE CREATE] Applying controls_if mutation:', {
-                elseifCount: newBlock.pendingElseifCount_,
-                elseCount: newBlock.pendingElseCount_
-              });
+            try {
+              console.log('[SSE CREATE] Checking for controls_if mutations: type =', newBlock.type, 'pendingElseifCount_ =', newBlock.pendingElseifCount_, 'pendingConditionBlockObjects_ =', !!newBlock.pendingConditionBlockObjects_);
+              if (newBlock.type === 'controls_if' && (newBlock.pendingElseifCount_ > 0 || newBlock.pendingElseCount_ > 0 || newBlock.pendingConditionBlockObjects_)) {
+                console.log('[SSE CREATE] ENTERING controls_if mutation block');
+                console.log('[SSE CREATE] Applying controls_if mutation:', {
+                  elseifCount: newBlock.pendingElseifCount_,
+                  elseCount: newBlock.pendingElseCount_
+                });
 
-              // Use the loadExtraState method if available (Blockly's preferred way)
-              if (typeof newBlock.loadExtraState === 'function') {
-                const state = {};
-                if (newBlock.pendingElseifCount_ > 0) {
-                  state.elseIfCount = newBlock.pendingElseifCount_;
+                // Use the loadExtraState method if available (Blockly's preferred way)
+                if (typeof newBlock.loadExtraState === 'function') {
+                  const state = {};
+                  if (newBlock.pendingElseifCount_ > 0) {
+                    state.elseIfCount = newBlock.pendingElseifCount_;
+                  }
+                  if (newBlock.pendingElseCount_ > 0) {
+                    state.hasElse = true;
+                  }
+                  console.log('[SSE CREATE] Using loadExtraState with:', state);
+                  newBlock.loadExtraState(state);
+                  console.log('[SSE CREATE] After loadExtraState');
+                } else {
+                  // Fallback: Set the internal state variables and call updateShape_
+                  newBlock.elseifCount_ = newBlock.pendingElseifCount_;
+                  newBlock.elseCount_ = newBlock.pendingElseCount_;
+
+                  if (typeof newBlock.updateShape_ === 'function') {
+                    console.log('[SSE CREATE] Calling updateShape_ on controls_if');
+                    newBlock.updateShape_();
+                  }
                 }
+
+                // Now that the mutator has created all the inputs, connect the stored condition block objects
+                console.log('[SSE CREATE] pendingConditionBlockObjects_ exists?', !!newBlock.pendingConditionBlockObjects_);
+                if (newBlock.pendingConditionBlockObjects_) {
+                  const conditionBlockObjects = newBlock.pendingConditionBlockObjects_;
+                  console.log('[SSE CREATE] Connecting condition blocks:', Object.keys(conditionBlockObjects));
+
+                  // Connect the IF condition
+                  if (conditionBlockObjects['IF']) {
+                    const ifBlock = conditionBlockObjects['IF'];
+                    const input = newBlock.getInput('IF0');
+                    console.log('[SSE CREATE] IF0 input exists?', !!input);
+                    if (input && input.connection && ifBlock.outputConnection) {
+                      ifBlock.outputConnection.connect(input.connection);
+                      console.log('[SSE CREATE] Connected IF condition');
+                    } else {
+                      console.warn('[SSE CREATE] Could not connect IF - input:', !!input, 'childConnection:', !!ifBlock.outputConnection);
+                    }
+                  }
+
+                  // Connect IFELSEN conditions
+                  console.log('[SSE CREATE] Processing', newBlock.pendingElseifCount_, 'IFELSEN conditions');
+                  for (let i = 0; i < newBlock.pendingElseifCount_; i++) {
+                    const key = 'IFELSEN' + i;
+                    console.log('[SSE CREATE] Looking for key:', key, 'exists?', !!conditionBlockObjects[key]);
+                    if (conditionBlockObjects[key]) {
+                      const ifElseBlock = conditionBlockObjects[key];
+                      // IFELSEN blocks connect to IF1, IF2, etc.
+                      const inputName = 'IF' + (i + 1);
+                      const input = newBlock.getInput(inputName);
+                      console.log('[SSE CREATE] Input', inputName, 'exists?', !!input);
+                      if (input && input.connection && ifElseBlock.outputConnection) {
+                        ifElseBlock.outputConnection.connect(input.connection);
+                        console.log('[SSE CREATE] Connected IFELSEN' + i + ' condition to ' + inputName);
+                      } else {
+                        console.warn('[SSE CREATE] Could not connect IFELSEN' + i + ' - input ' + inputName + ' exists:', !!input, 'has connection:', input ? !!input.connection : false, 'childHasOutput:', !!ifElseBlock.outputConnection);
+                      }
+                    }
+                  }
+                } else {
+                  console.warn('[SSE CREATE] No pendingConditionBlockObjects_ found');
+                }
+
+                // Verify the ELSE input was created
                 if (newBlock.pendingElseCount_ > 0) {
-                  state.hasElse = true;
+                  const elseInput = newBlock.getInput('ELSE');
+                  console.log('[SSE CREATE] ELSE input after mutation:', elseInput);
+                  if (!elseInput) {
+                    console.error('[SSE CREATE] ELSE input was NOT created!');
+                  }
                 }
-                console.log('[SSE CREATE] Using loadExtraState with:', state);
-                newBlock.loadExtraState(state);
-              } else {
-                // Fallback: Set the internal state variables and call updateShape_
-                newBlock.elseifCount_ = newBlock.pendingElseifCount_;
-                newBlock.elseCount_ = newBlock.pendingElseCount_;
 
-                if (typeof newBlock.updateShape_ === 'function') {
-                  console.log('[SSE CREATE] Calling updateShape_ on controls_if');
-                  newBlock.updateShape_();
-                }
+                // Re-render after connecting condition blocks
+                newBlock.render();
               }
-
-              // Verify the ELSE input was created
-              if (newBlock.pendingElseCount_ > 0) {
-                const elseInput = newBlock.getInput('ELSE');
-                console.log('[SSE CREATE] ELSE input after mutation:', elseInput);
-                if (!elseInput) {
-                  console.error('[SSE CREATE] ELSE input was NOT created!');
-                }
-              }
+            } catch (err) {
+              console.error('[SSE CREATE] Error in controls_if mutations:', err);
             }
 
             // Apply pending text_join mutations (must be after initSvg)

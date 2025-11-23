@@ -53,8 +53,8 @@ VALUE: lists_sort(inputs(TYPE: "NUMERIC/TEXT/IGNORE_CASE", DIRECTION: "1/-1")) /
 
 # Variables
 VALUE: variables_get(inputs(VAR: value)) // VAR is a variable ID
-VALUE: variables_set(inputs(VAR: value, VALUE: value)) // VAR is a variable ID
-VALUE: math_change(inputs(VAR: value, DELTA: value)) // VAR is a variable ID. To use this, you MUST have used `variables_set` before this
+STATEMENT: variables_set(inputs(VAR: value, VALUE: value)) // VAR is a variable ID
+STATEMENT: math_change(inputs(VAR: value, DELTA: value)) // VAR is a variable ID. To use this, you MUST have used `variables_set` before this
 
 # MCP Block inputs
 VALUE: input_reference_NAME(inputs()) // Replace "NAME" with the name of the MCP block input. Any inputs for the one MCP block can have their blocks made with this. You may ONLY use this if the MCP has an input with this name. If needed you must create inputs and outputs first for the MCP block

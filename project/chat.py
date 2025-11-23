@@ -50,6 +50,9 @@ current_mcp_server_url = None
 deployment_just_happened = False
 deployment_message = ""
 
+# Track if first MCP output block creation attempt has happened in this conversation
+first_output_block_attempted = False
+
 blocks_context = ""
 try:
     file_path = os.path.join(os.path.dirname(__file__), "blocks.txt")
@@ -893,7 +896,10 @@ def create_gradio_interface():
     
     def chat_with_context(message, history):
         # Check if API key is set and create/update client
-        global client, stored_api_key
+        global client, stored_api_key, first_output_block_attempted
+        
+        # Reset output block tracking for this conversation turn
+        first_output_block_attempted = False
         
         # Use stored key or environment key
         api_key = stored_api_key or os.environ.get("OPENAI_API_KEY")
@@ -1081,14 +1087,32 @@ def create_gradio_interface():
                             blockID = function_args.get("blockID", None)
                             placement_type = function_args.get("type", None)
                             input_name = function_args.get("input_name", None)
-                            if blockID is None:
-                                print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
+                            
+                            # Check if this is the first MCP output block creation attempt
+                            is_first_output_attempt = (
+                                not first_output_block_attempted and 
+                                placement_type == "input" and 
+                                input_name and 
+                                input_name.startswith("R")
+                            )
+                            
+                            if is_first_output_attempt:
+                                # Mark that we've attempted an output block in this conversation
+                                first_output_block_attempted = True
+                                # Return warning instead of creating the block
+                                tool_result = "[TOOL] Automated warning: Make sure your output block contains the full and entire value needed. Block placement was **not** executed. Retry with the full command needed in one go."
+                                result_label = "Output Block Warning"
+                                print(Fore.YELLOW + f"[FIRST OUTPUT BLOCK] Intercepted first output block attempt with command `{command}`." + Style.RESET_ALL)
                             else:
-                                print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
-                            if input_name:
-                                print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
-                            tool_result = create_block(command, blockID, placement_type, input_name)
-                            result_label = "Create Operation"
+                                # Normal block creation
+                                if blockID is None:
+                                    print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
+                                else:
+                                    print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
+                                if input_name:
+                                    print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
+                                tool_result = create_block(command, blockID, placement_type, input_name)
+                                result_label = "Create Operation"
                         
                         elif function_name == "create_variable":
                             name = function_args.get("name", "")
