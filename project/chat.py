@@ -223,16 +223,16 @@ def create_variable(var_name):
         traceback.print_exc()
         return f"Error creating variable: {str(e)}"
 
-# Server-Sent Events endpoint for creation requests
-@app.get("/create_stream")
-async def create_stream():
-    """Stream creation requests to the frontend using Server-Sent Events"""
+# Unified Server-Sent Events endpoint for all workspace operations
+@app.get("/unified_stream")
+async def unified_stream():
+    """Unified SSE endpoint for delete, create, and variable operations"""
     
-    async def clear_sent_request(sent_requests, request_id, delay):
-        """Clear request_id from sent_requests after delay seconds"""
+    async def clear_sent_request(sent_requests, request_key, delay):
+        """Clear request_key from sent_requests after delay seconds"""
         await asyncio.sleep(delay)
-        if request_id in sent_requests:
-            sent_requests.discard(request_id)
+        if request_key in sent_requests:
+            sent_requests.discard(request_key)
     
     async def event_generator():
         sent_requests = set()  # Track sent requests to avoid duplicates
@@ -240,23 +240,60 @@ async def create_stream():
         
         while True:
             try:
-                # Check for creation requests (non-blocking)
-                if not creation_queue.empty():
-                    creation_request = creation_queue.get_nowait()
-                    request_id = creation_request.get("request_id")
+                # Check deletion queue
+                if not deletion_queue.empty():
+                    deletion_request = deletion_queue.get_nowait()
+                    block_id = deletion_request.get("block_id")
+                    request_key = f"delete_{block_id}"
                     
                     # Avoid sending duplicate requests too quickly
-                    if request_id not in sent_requests:
-                        sent_requests.add(request_id)
-                        print(f"[SSE CREATE SEND] Sending creation request with ID: {request_id}")
+                    if request_key not in sent_requests:
+                        sent_requests.add(request_key)
+                        deletion_request["type"] = "delete"  # Add type identifier
+                        print(f"[SSE SEND] Sending deletion request for block: {block_id}")
+                        yield f"data: {json.dumps(deletion_request)}\n\n"
+                        
+                        # Clear from sent_requests after 10 seconds
+                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
+                    else:
+                        print(f"[SSE SKIP] Skipping duplicate request for block: {block_id}")
+                
+                # Check creation queue
+                elif not creation_queue.empty():
+                    creation_request = creation_queue.get_nowait()
+                    request_id = creation_request.get("request_id")
+                    request_key = f"create_{request_id}"
+                    
+                    # Avoid sending duplicate requests too quickly
+                    if request_key not in sent_requests:
+                        sent_requests.add(request_key)
+                        creation_request["type"] = "create"  # Add type identifier
+                        print(f"[SSE SEND] Sending creation request with ID: {request_id}")
                         yield f"data: {json.dumps(creation_request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
-                        asyncio.create_task(clear_sent_request(sent_requests, request_id, 10))
+                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
                     else:
-                        print(f"[SSE CREATE SKIP] Skipping duplicate request for ID: {request_id}")
+                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
+                
+                # Check variable queue
+                elif not variable_queue.empty():
+                    variable_request = variable_queue.get_nowait()
+                    request_id = variable_request.get("request_id")
+                    request_key = f"variable_{request_id}"
                     
-                    await asyncio.sleep(0.1)  # Small delay between messages
+                    # Avoid sending duplicate requests too quickly
+                    if request_key not in sent_requests:
+                        sent_requests.add(request_key)
+                        variable_request["type"] = "variable"  # Add type identifier
+                        print(f"[SSE SEND] Sending variable creation request with ID: {request_id}")
+                        yield f"data: {json.dumps(variable_request)}\n\n"
+                        
+                        # Clear from sent_requests after 10 seconds
+                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
+                    else:
+                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
+                
                 else:
                     # Send a heartbeat every 30 seconds to keep connection alive
                     heartbeat_counter += 1
@@ -264,10 +301,11 @@ async def create_stream():
                         yield f"data: {json.dumps({'heartbeat': True})}\n\n"
                         heartbeat_counter = 0
                     await asyncio.sleep(0.1)
+                    
             except queue.Empty:
                 await asyncio.sleep(0.1)
             except Exception as e:
-                print(f"[SSE CREATE ERROR] {e}")
+                print(f"[SSE ERROR] {e}")
                 await asyncio.sleep(1)
     
     return StreamingResponse(
@@ -299,63 +337,6 @@ async def creation_result(request: Request):
     
     return {"received": True}
 
-# Server-Sent Events endpoint for deletion requests
-@app.get("/delete_stream")
-async def delete_stream():
-    """Stream deletion requests to the frontend using Server-Sent Events"""
-    
-    async def clear_sent_request(sent_requests, block_id, delay):
-        """Clear block_id from sent_requests after delay seconds"""
-        await asyncio.sleep(delay)
-        if block_id in sent_requests:
-            sent_requests.discard(block_id)
-    
-    async def event_generator():
-        sent_requests = set()  # Track sent requests to avoid duplicates
-        heartbeat_counter = 0
-        
-        while True:
-            try:
-                # Check for deletion requests (non-blocking)
-                if not deletion_queue.empty():
-                    deletion_request = deletion_queue.get_nowait()
-                    block_id = deletion_request.get("block_id")
-                    
-                    # Avoid sending duplicate requests too quickly
-                    if block_id not in sent_requests:
-                        sent_requests.add(block_id)
-                        print(f"[SSE SEND] Sending deletion request for block: {block_id}")
-                        yield f"data: {json.dumps(deletion_request)}\n\n"
-                        
-                        # Clear from sent_requests after 10 seconds
-                        asyncio.create_task(clear_sent_request(sent_requests, block_id, 10))
-                    else:
-                        print(f"[SSE SKIP] Skipping duplicate request for block: {block_id}")
-                    
-                    await asyncio.sleep(0.1)  # Small delay between messages
-                else:
-                    # Send a heartbeat every 30 seconds to keep connection alive
-                    heartbeat_counter += 1
-                    if heartbeat_counter >= 300:  # 300 * 0.1 = 30 seconds
-                        yield f"data: {json.dumps({'heartbeat': True})}\n\n"
-                        heartbeat_counter = 0
-                    await asyncio.sleep(0.1)
-            except queue.Empty:
-                await asyncio.sleep(0.1)
-            except Exception as e:
-                print(f"[SSE ERROR] {e}")
-                await asyncio.sleep(1)
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
-
 # Endpoint to receive deletion results from frontend
 @app.post("/deletion_result")
 async def deletion_result(request: Request):
@@ -373,64 +354,6 @@ async def deletion_result(request: Request):
         print(f"[DELETION RESULT STORED] Results dict now has {len(deletion_results)} items")
     
     return {"received": True}
-
-# Server-Sent Events endpoint for variable creation requests
-@app.get("/variable_stream")
-async def variable_stream():
-    """Stream variable creation requests to the frontend using Server-Sent Events"""
-    
-    async def clear_sent_request(sent_requests, request_id, delay):
-        """Clear request_id from sent_requests after delay seconds"""
-        await asyncio.sleep(delay)
-        if request_id in sent_requests:
-            sent_requests.discard(request_id)
-    
-    async def event_generator():
-        sent_requests = set()  # Track sent requests to avoid duplicates
-        heartbeat_counter = 0
-        
-        while True:
-            try:
-                # Check for variable creation requests (non-blocking)
-                if not variable_queue.empty():
-                    var_request = variable_queue.get_nowait()
-                    request_id = var_request.get("request_id")
-                    
-                    # Avoid sending duplicate requests too quickly
-                    if request_id not in sent_requests:
-                        sent_requests.add(request_id)
-                        print(f"[SSE VARIABLE SEND] Sending variable creation request with ID: {request_id}")
-                        yield f"data: {json.dumps(var_request)}\n\n"
-                        
-                        # Clear from sent_requests after 10 seconds
-                        asyncio.create_task(clear_sent_request(sent_requests, request_id, 10))
-                    else:
-                        print(f"[SSE VARIABLE SKIP] Skipping duplicate request for ID: {request_id}")
-                    
-                    await asyncio.sleep(0.1)  # Small delay between messages
-                else:
-                    # Send a heartbeat every 30 seconds to keep connection alive
-                    heartbeat_counter += 1
-                    if heartbeat_counter >= 300:  # 300 * 0.1 = 30 seconds
-                        yield f"data: {json.dumps({'heartbeat': True})}\n\n"
-                        heartbeat_counter = 0
-                    await asyncio.sleep(0.1)
-                    
-            except queue.Empty:
-                await asyncio.sleep(0.1)
-            except Exception as e:
-                print(f"[SSE VARIABLE ERROR] {e}")
-                await asyncio.sleep(1)
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
 
 # Endpoint to receive variable creation results from frontend
 @app.post("/variable_result")

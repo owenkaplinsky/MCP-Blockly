@@ -34,25 +34,17 @@ async def update_chat_route(request: Request):
 async def set_api_key_chat_route(request: Request):
     return await chat.set_api_key_chat(request)
 
-@app.get("/create_stream")
-async def create_stream_route():
-    return await chat.create_stream()
+@app.get("/unified_stream")
+async def unified_stream_route():
+    return await chat.unified_stream()
 
 @app.post("/creation_result")
 async def creation_result_route(request: Request):
     return await chat.creation_result(request)
 
-@app.get("/delete_stream")
-async def delete_stream_route():
-    return await chat.delete_stream()
-
 @app.post("/deletion_result")
 async def deletion_result_route(request: Request):
     return await chat.deletion_result(request)
-
-@app.get("/variable_stream")
-async def variable_stream_route():
-    return await chat.variable_stream()
 
 @app.post("/variable_result")
 async def variable_result_route(request: Request):

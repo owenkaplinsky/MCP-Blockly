@@ -223,10 +223,10 @@ cleanWorkspace.addEventListener("click", () => {
   ws.cleanUp();
 });
 
-// Set up SSE connection for deletion requests
-const setupDeletionStream = () => {
-  const eventSource = new EventSource('/delete_stream');
-  const processedRequests = new Set(); // Track processed deletion requests
+// Set up unified SSE connection for all workspace operations
+const setupUnifiedStream = () => {
+  const eventSource = new EventSource('/unified_stream');
+  const processedRequests = new Set(); // Track processed requests
 
   eventSource.onmessage = (event) => {
     try {
@@ -235,19 +235,29 @@ const setupDeletionStream = () => {
       // Skip heartbeat messages
       if (data.heartbeat) return;
 
-      // Skip if we've already processed this exact request
-      const requestKey = `${data.block_id}_${Date.now()}`;
-      if (data.block_id && processedRequests.has(data.block_id)) {
-        console.log('[SSE] Skipping duplicate deletion request for:', data.block_id);
-        return;
-      }
-      if (data.block_id) {
-        processedRequests.add(data.block_id);
-        // Clear after 10 seconds to allow retries if needed
-        setTimeout(() => processedRequests.delete(data.block_id), 10000);
+      // Determine request key based on type
+      let requestKey;
+      if (data.type === 'delete') {
+        requestKey = `delete_${data.block_id}`;
+      } else if (data.type === 'create') {
+        requestKey = `create_${data.request_id}`;
+      } else if (data.type === 'variable') {
+        requestKey = `variable_${data.request_id}`;
       }
 
-      if (data.block_id) {
+      // Skip if we've already processed this request
+      if (requestKey && processedRequests.has(requestKey)) {
+        console.log('[SSE] Skipping duplicate request:', requestKey);
+        return;
+      }
+      if (requestKey) {
+        processedRequests.add(requestKey);
+        // Clear after 10 seconds to allow retries if needed
+        setTimeout(() => processedRequests.delete(requestKey), 10000);
+      }
+
+      // Handle deletion requests
+      if (data.type === 'delete' && data.block_id) {
         console.log('[SSE] Received deletion request for block:', data.block_id);
 
         // Try to delete the block
@@ -292,53 +302,9 @@ const setupDeletionStream = () => {
           console.error('[SSE] Error sending deletion result:', err);
         });
       }
-    } catch (err) {
-      console.error('[SSE] Error processing message:', err);
-    }
-  };
-
-  eventSource.onerror = (error) => {
-    console.error('[SSE] Connection error:', error);
-    // Reconnect after 5 seconds
-    setTimeout(() => {
-      console.log('[SSE] Attempting to reconnect...');
-      setupDeletionStream();
-    }, 5000);
-  };
-
-  eventSource.onopen = () => {
-    console.log('[SSE] Connected to deletion stream');
-  };
-};
-
-// Start the SSE connection
-setupDeletionStream();
-
-// Set up SSE connection for creation requests
-const setupCreationStream = () => {
-  const eventSource = new EventSource('/create_stream');
-  const processedRequests = new Set(); // Track processed creation requests
-
-  eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-
-      // Skip heartbeat messages
-      if (data.heartbeat) return;
-
-      // Skip if we've already processed this request
-      if (data.request_id && processedRequests.has(data.request_id)) {
-        console.log('[SSE CREATE] Skipping duplicate creation request:', data.request_id);
-        return;
-      }
-      if (data.request_id) {
-        processedRequests.add(data.request_id);
-        // Clear after 10 seconds to allow retries if needed
-        setTimeout(() => processedRequests.delete(data.request_id), 10000);
-      }
-
-      if (data.block_spec && data.request_id) {
-        console.log('[SSE CREATE] Received creation request:', data.request_id, data.block_spec);
+      // Handle creation requests
+      else if (data.type === 'create' && data.block_spec && data.request_id) {
+        console.log('[SSE] Received creation request:', data.request_id, data.block_spec);
 
         let success = false;
         let error = null;
@@ -705,52 +671,9 @@ const setupCreationStream = () => {
           console.error('[SSE CREATE] Error sending creation result:', err);
         });
       }
-    } catch (err) {
-      console.error('[SSE CREATE] Error processing message:', err);
-    }
-  };
-
-  eventSource.onerror = (error) => {
-    console.error('[SSE CREATE] Connection error:', error);
-    // Reconnect after 5 seconds
-    setTimeout(() => {
-      console.log('[SSE CREATE] Attempting to reconnect...');
-      setupCreationStream();
-    }, 5000);
-  };
-
-  eventSource.onopen = () => {
-    console.log('[SSE CREATE] Connected to creation stream');
-  };
-};
-
-// Start the creation SSE connection
-setupCreationStream();
-
-const setupVariableStream = () => {
-  const eventSource = new EventSource('/variable_stream');
-  const processedRequests = new Set(); // Track processed variable requests
-
-  eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-
-      // Skip heartbeat messages
-      if (data.heartbeat) return;
-
-      // Skip if we've already processed this request
-      if (data.request_id && processedRequests.has(data.request_id)) {
-        console.log('[SSE VARIABLE] Skipping duplicate variable request:', data.request_id);
-        return;
-      }
-      if (data.request_id) {
-        processedRequests.add(data.request_id);
-        // Clear after 10 seconds to allow retries if needed
-        setTimeout(() => processedRequests.delete(data.request_id), 10000);
-      }
-
-      if (data.variable_name && data.request_id) {
-        console.log('[SSE VARIABLE] Received variable creation request:', data.request_id, data.variable_name);
+      // Handle variable creation requests
+      else if (data.type === 'variable' && data.variable_name && data.request_id) {
+        console.log('[SSE] Received variable creation request:', data.request_id, data.variable_name);
 
         let success = false;
         let error = null;
@@ -766,18 +689,18 @@ const setupVariableStream = () => {
           if (variableModel) {
             variableId = variableModel.getId();
             success = true;
-            console.log('[SSE VARIABLE] Successfully created variable:', variableName, 'with ID:', variableId);
+            console.log('[SSE] Successfully created variable:', variableName, 'with ID:', variableId);
           } else {
             throw new Error('Failed to create variable model');
           }
 
         } catch (e) {
           error = e.toString();
-          console.error('[SSE VARIABLE] Error creating variable:', e);
+          console.error('[SSE] Error creating variable:', e);
         }
 
         // Send result back to backend immediately
-        console.log('[SSE VARIABLE] Sending variable creation result:', {
+        console.log('[SSE] Sending variable creation result:', {
           request_id: data.request_id,
           success,
           error,
@@ -794,32 +717,32 @@ const setupVariableStream = () => {
             variable_id: variableId
           })
         }).then(response => {
-          console.log('[SSE VARIABLE] Variable creation result sent successfully');
+          console.log('[SSE] Variable creation result sent successfully');
         }).catch(err => {
-          console.error('[SSE VARIABLE] Error sending variable creation result:', err);
+          console.error('[SSE] Error sending variable creation result:', err);
         });
       }
     } catch (err) {
-      console.error('[SSE VARIABLE] Error processing message:', err);
+      console.error('[SSE] Error processing message:', err);
     }
   };
 
   eventSource.onerror = (error) => {
-    console.error('[SSE VARIABLE] Connection error:', error);
+    console.error('[SSE] Connection error:', error);
     // Reconnect after 5 seconds
     setTimeout(() => {
-      console.log('[SSE VARIABLE] Attempting to reconnect...');
-      setupVariableStream();
+      console.log('[SSE] Attempting to reconnect...');
+      setupUnifiedStream();
     }, 5000);
   };
 
   eventSource.onopen = () => {
-    console.log('[SSE VARIABLE] Connected to variable stream');
+    console.log('[SSE] Connected to unified stream');
   };
 };
 
-// Start the variable SSE connection
-setupVariableStream();
+// Start the unified SSE connection
+setupUnifiedStream();
 
 // Observe any size change to the blockly container
 const observer = new ResizeObserver(() => {
