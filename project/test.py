@@ -25,19 +25,16 @@ async def update_code(request: Request):
     global latest_blockly_code
     data = await request.json()
     latest_blockly_code = data.get("code", "")
-    print("\n[FASTAPI] Updated Blockly code")
     return {"ok": True}
 
 # Sends the latest code to chat.py so that the agent will be able to use the MCP
 @app.get("/get_latest_code")
 async def get_latest_code():
-    """Return the latest Blockly-generated Python code for other services (like chat.py)"""
     global latest_blockly_code
     return {"code": latest_blockly_code}
 
 @app.get("/get_api_key")
 async def get_api_key_endpoint():
-    """Get the current API keys from memory"""
     global stored_api_key, stored_hf_key
     api_key = stored_api_key or os.environ.get("OPENAI_API_KEY", "")
     hf_key = stored_hf_key or os.environ.get("HUGGINGFACE_API_KEY", "")
@@ -57,7 +54,6 @@ async def get_api_key_endpoint():
 
 @app.post("/set_api_key")
 async def set_api_key_endpoint(request: Request):
-    """Save API keys to environment variables"""
     global stored_api_key, stored_hf_key
     data = await request.json()
     api_key = data.get("api_key", "").strip()

@@ -133,12 +133,12 @@ Blockly.Extensions.registerMutator(
           for (let i = 0; i < this.inputNames_.length; i++) {
             const name = this.inputNames_[i];
             const input = this.getInput('X' + i);
-            
+
             // Check if there's already a connected block in this input
             if (input && input.connection && input.connection.targetBlock()) {
               const connectedBlock = input.connection.targetBlock();
               const expectedType = `input_reference_${name}`;
-              
+
               // If this is the expected reference block, track it
               if (connectedBlock.type === expectedType && connectedBlock._ownerBlockId === this.id) {
                 this.inputRefBlocks_.set(name, connectedBlock);
@@ -310,10 +310,10 @@ Blockly.Extensions.registerMutator(
           this.moveInputBefore('X' + j, 'BODY');
 
           const blockType = createInputRefBlockType(name);
-          
+
           // Check if there's already a block connected to this input
           const currentlyConnected = input.connection ? input.connection.targetBlock() : null;
-          
+
           if (currentlyConnected && currentlyConnected.type === blockType) {
             // There's already the correct reference block connected, just track it
             currentlyConnected._ownerBlockId = this.id;

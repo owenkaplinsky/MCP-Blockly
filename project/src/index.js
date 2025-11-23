@@ -898,6 +898,8 @@ const updateCode = () => {
   const blocks = ws.getAllBlocks(false);
   const hasCall = blocks.some(block => block.type === 'llm_call');
   const hasAPI = blocks.some(block => block.type === 'call_api');
+  const hasPrime = code.includes('math_isPrime()');
+  const hasNumberCheck = code.includes('isinstance(') && code.includes(', Number)');
 
   if (hasCall) {
     code = call + code;
@@ -905,6 +907,18 @@ const updateCode = () => {
 
   if (hasAPI) {
     code = API + code;
+  }
+
+  // Replace math_isPrime() with isprime() and add sympy import
+  if (hasPrime) {
+    code = code.replace(/math_isPrime\(\)/g, 'isprime()');
+    code = "from sympy import isprime\n\n" + code;
+  }
+
+  // Replace Number with numbers.Number and add numbers import
+  if (hasNumberCheck) {
+    code = code.replace(/isinstance\(([^,]+),\s*Number\)/g, 'isinstance($1, numbers.Number)');
+    code = "import numbers\n\n" + code;
   }
 
   code = "import gradio as gr\n\n" + code
