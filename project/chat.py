@@ -135,11 +135,13 @@ def delete_block(block_id):
         traceback.print_exc()
         return f"Error deleting block: {str(e)}"
 
-def create_block(block_spec, under_block_id=None):
+def create_block(block_spec, under_block_id=None, input_name=None):
     try:
         print(f"[CREATE REQUEST] Attempting to create block: {block_spec}")
         if under_block_id:
             print(f"[CREATE REQUEST] Under block ID: {under_block_id}")
+        if input_name:
+            print(f"[CREATE REQUEST] Into input: {input_name}")
         
         # Generate a unique request ID
         import uuid
@@ -149,10 +151,12 @@ def create_block(block_spec, under_block_id=None):
         if request_id in creation_results:
             creation_results.pop(request_id)
         
-        # Add to creation queue with optional under_block_id
+        # Add to creation queue with optional under_block_id and input_name
         queue_data = {"request_id": request_id, "block_spec": block_spec}
         if under_block_id:
             queue_data["under_block_id"] = under_block_id
+        if input_name:
+            queue_data["input_name"] = input_name
         creation_queue.put(queue_data)
         print(f"[CREATE REQUEST] Added to queue with ID: {request_id}")
         
@@ -612,6 +616,16 @@ def create_gradio_interface():
     You can create new blocks by specifying the block type and its inputs, if any.
     You cannot create a `create_mcp` block, but you may edit its inputs using the dedicated tool.
 
+    ### Placing Blocks in MCP Inputs
+    You can place blocks directly into the MCP block's inputs using the `input` parameter:
+    - Use `input: "X0"`, `input: "X1"`, etc. to place a block into an input slot
+    - Use `input: "R0"`, `input: "R1"`, etc. to place a block into an output slot
+    - **This feature can ONLY be used with the MCP block** - you cannot place blocks into inputs of other blocks this way
+    - The block will replace whatever is currently in that input
+
+    Example: Create a text block and put it in the MCP's first input:
+    `text(inputs(TEXT: "hello"))` with `input: "X0"`
+
     There are two kinds of nesting:
 
     1. **Statement-level nesting (main-level blocks)**  
@@ -734,8 +748,12 @@ def create_gradio_interface():
                         "type": "string",
                         "description": "The ID of the block that you want to place this under.",
                     },
+                    "input": {
+                        "type": "string",
+                        "description": "The input name of the MCP block to place this block inside (e.g., 'X0', 'R0'). Can only be used with the MCP block.",
+                    },
                 },
-                "required": ["command", "under"],
+                "required": ["command"],
             }
         },
         {
@@ -992,11 +1010,14 @@ def create_gradio_interface():
                         elif function_name == "create_block":
                             command = function_args.get("command", "")
                             under_block_id = function_args.get("under", None)
-                            if under_block_id is None:
+                            input_name = function_args.get("input", None)
+                            if under_block_id is None and input_name is None:
                                 print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
-                            else:
+                            elif under_block_id:
                                 print(Fore.YELLOW + f"Agent created block with command `{command}`, under block ID `{under_block_id}`." + Style.RESET_ALL)
-                            tool_result = create_block(command, under_block_id)
+                            elif input_name:
+                                print(Fore.YELLOW + f"Agent created block with command `{command}`, into input `{input_name}`." + Style.RESET_ALL)
+                            tool_result = create_block(command, under_block_id, input_name)
                             result_label = "Create Operation"
                         
                         elif function_name == "create_variable":

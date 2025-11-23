@@ -658,8 +658,37 @@ const setupUnifiedStream = () => {
           if (newBlock) {
             blockId = newBlock.id;
 
+            // If input_name is specified, place the block into that MCP input directly
+            if (data.input_name) {
+              const mcpBlock = ws.getBlocksByType('create_mcp')[0];
+              if (mcpBlock) {
+                const input = mcpBlock.getInput(data.input_name);
+                if (input && input.connection) {
+                  console.log('[SSE CREATE] Placing block into MCP input:', data.input_name);
+                  // Disconnect any existing block
+                  const existingBlock = input.connection.targetBlock();
+                  if (existingBlock) {
+                    existingBlock.unplug();
+                  }
+                  // Connect the new block
+                  if (newBlock.outputConnection) {
+                    input.connection.connect(newBlock.outputConnection);
+                    console.log('[SSE CREATE] Successfully placed block into input:', data.input_name);
+                  } else {
+                    error = `Block has no output connection to connect to MCP input ${data.input_name}`;
+                    console.error('[SSE CREATE]', error);
+                  }
+                } else {
+                  error = `MCP input not found: ${data.input_name}`;
+                  console.error('[SSE CREATE]', error);
+                }
+              } else {
+                error = 'No MCP block found to place this block into';
+                console.error('[SSE CREATE]', error);
+              }
+            }
             // If under_block_id is specified, attach the new block under the parent
-            if (data.under_block_id) {
+            else if (data.under_block_id) {
               const parentBlock = ws.getBlockById(data.under_block_id);
               if (parentBlock) {
                 console.log('[SSE CREATE] Attaching to parent block:', data.under_block_id);
