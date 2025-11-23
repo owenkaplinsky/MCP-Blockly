@@ -1037,8 +1037,17 @@ const setupUnifiedStream = () => {
               // For type: 'input', find the first MCP block and use input_name for the slot
               const mcpBlock = ws.getBlocksByType('create_mcp')[0];
               if (mcpBlock) {
-                // input_name specifies which output slot (e.g., "R0", "R1")
-                const inputSlot = data.input_name;
+                let inputSlot = data.input_name;
+
+                // If slot name is not in R format, look it up by output name
+                if (inputSlot && !inputSlot.match(/^R\d+$/)) {
+                  const outputNames = mcpBlock.outputNames_ || [];
+                  const outputIndex = outputNames.indexOf(inputSlot);
+                  if (outputIndex >= 0) {
+                    inputSlot = 'R' + outputIndex;
+                  }
+                }
+
                 const input = mcpBlock.getInput(inputSlot);
                 if (input && input.connection) {
                   console.log('[SSE CREATE] Placing block into MCP output slot:', inputSlot);
