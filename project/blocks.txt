@@ -7,7 +7,7 @@ make_json(inputs(KEYN: value, FIELDN: value)) // N starts at 0; you can make as 
 call_api(inputs(METHOD: "GET/POST/PUT/DELETE", URL: value, HEADERS: value)) // HEADERS is optional
 
 # Logic
-controls_if(inputs(IFN: value)) // N starts at 0; you can make as many N as you want
+controls_if(inputs(IF: value, IFELSEN0: value, ELSE)) // IF is REQUIRED (the condition). IFELSEN0, IFELSEN1, etc are OPTIONAL (additional else-if conditions). ELSE is OPTIONAL (no value needed, just include the word). DO NOT use input_name with controls_if creation; specify all conditions in the inputs. After creating, use input_name to place statements: "DO0" (IF then-statements), "DO1" (first ELSE-IF then-statements), "ELSE" (final else statements)
 logic_negate(inputs())
 logic_boolean(inputs(BOOL: "TRUE/FALSE"))
 logic_null(inputs())

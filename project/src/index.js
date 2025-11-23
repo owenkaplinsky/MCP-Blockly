@@ -490,6 +490,69 @@ const setupUnifiedStream = () => {
                     }
                   }
                 }
+              } else if (blockType === 'controls_if') {
+                // Special handling for if/else blocks
+                // IF is required, IFELSEN0, IFELSEN1, etc are optional, ELSE is optional
+                // Each condition block goes into IF, IFELSEN0, IFELSEN1, etc inputs
+
+                // Count how many IF/IFELSEN conditions we have
+                let conditionCount = 0;
+                const conditionBlocks = {};
+                let hasElse = false;
+
+                console.log('[SSE CREATE] controls_if inputs:', inputs);
+
+                for (const [key, value] of Object.entries(inputs)) {
+                  if (key === 'IF') {
+                    conditionBlocks['IF'] = value;
+                  } else if (key.match(/^IFELSEN\d+$/)) {
+                    conditionBlocks[key] = value;
+                  } else if (key === 'ELSE' && value === true) {
+                    // ELSE is a marker with no value (set to true by parseInputs)
+                    console.log('[SSE CREATE] Detected ELSE marker');
+                    hasElse = true;
+                  }
+                }
+
+                console.log('[SSE CREATE] controls_if parsed: hasElse =', hasElse);
+
+                // Create inputs for each condition
+                if (conditionBlocks['IF']) {
+                  const ifValue = conditionBlocks['IF'];
+                  if (typeof ifValue === 'string' && ifValue.match(/^\w+\s*\(inputs\(/)) {
+                    const childBlock = parseAndCreateBlock(ifValue);
+                    const input = newBlock.getInput('IF0');
+                    if (input && input.connection && childBlock.outputConnection) {
+                      childBlock.outputConnection.connect(input.connection);
+                    }
+                  }
+                }
+
+                // Handle IFELSEN conditions
+                let elseIfCount = 0;
+                for (const [key, value] of Object.entries(conditionBlocks)) {
+                  const elseIfMatch = key.match(/^IFELSEN(\d+)$/);
+                  if (elseIfMatch) {
+                    const elseIfValue = value;
+                    if (typeof elseIfValue === 'string' && elseIfValue.match(/^\w+\s*\(inputs\(/)) {
+                      // Blockly uses a mutator to add IF/ELSE IF blocks, so we need to configure that
+                      // For now, just try to create the structure
+                      const childBlock = parseAndCreateBlock(elseIfValue);
+
+                      // The inputs will be IF1, IF2, etc. for additional conditions
+                      const ifInputName = 'IF' + (elseIfCount + 1);
+                      const input = newBlock.getInput(ifInputName);
+                      if (input && input.connection && childBlock.outputConnection) {
+                        childBlock.outputConnection.connect(input.connection);
+                      }
+                      elseIfCount++;
+                    }
+                  }
+                }
+
+                // Store these for later - we'll apply them after initSvg()
+                newBlock.pendingElseifCount_ = elseIfCount;
+                newBlock.pendingElseCount_ = hasElse ? 1 : 0;
               } else {
                 // Normal block handling
                 for (const [key, value] of Object.entries(inputs)) {
@@ -537,6 +600,45 @@ const setupUnifiedStream = () => {
 
             // Initialize the block (renders it)
             newBlock.initSvg();
+
+            // Apply pending controls_if mutations (must be after initSvg)
+            if (newBlock.type === 'controls_if' && (newBlock.pendingElseifCount_ > 0 || newBlock.pendingElseCount_ > 0)) {
+              console.log('[SSE CREATE] Applying controls_if mutation:', {
+                elseifCount: newBlock.pendingElseifCount_,
+                elseCount: newBlock.pendingElseCount_
+              });
+
+              // Use the loadExtraState method if available (Blockly's preferred way)
+              if (typeof newBlock.loadExtraState === 'function') {
+                const state = {};
+                if (newBlock.pendingElseifCount_ > 0) {
+                  state.elseIfCount = newBlock.pendingElseifCount_;
+                }
+                if (newBlock.pendingElseCount_ > 0) {
+                  state.hasElse = true;
+                }
+                console.log('[SSE CREATE] Using loadExtraState with:', state);
+                newBlock.loadExtraState(state);
+              } else {
+                // Fallback: Set the internal state variables and call updateShape_
+                newBlock.elseifCount_ = newBlock.pendingElseifCount_;
+                newBlock.elseCount_ = newBlock.pendingElseCount_;
+
+                if (typeof newBlock.updateShape_ === 'function') {
+                  console.log('[SSE CREATE] Calling updateShape_ on controls_if');
+                  newBlock.updateShape_();
+                }
+              }
+
+              // Verify the ELSE input was created
+              if (newBlock.pendingElseCount_ > 0) {
+                const elseInput = newBlock.getInput('ELSE');
+                console.log('[SSE CREATE] ELSE input after mutation:', elseInput);
+                if (!elseInput) {
+                  console.error('[SSE CREATE] ELSE input was NOT created!');
+                }
+              }
+            }
 
             // Only position the top-level block
             if (shouldPosition) {
@@ -634,23 +736,29 @@ const setupUnifiedStream = () => {
             }
 
             // Handle the last key-value pair
-            if (currentKey && currentValue) {
+            if (currentKey) {
               currentKey = currentKey.trim();
-              currentValue = currentValue.trim();
 
-              // Parse the value
-              if (currentValue.match(/^\w+\s*\(inputs\(/)) {
-                // This is a nested block
-                result[currentKey] = currentValue;
-              } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
-                // This is a number
-                result[currentKey] = parseFloat(currentValue);
-              } else if (currentValue === 'true' || currentValue === 'false') {
-                // This is a boolean
-                result[currentKey] = currentValue === 'true';
+              // If there's no value, this is a flag/marker (like ELSE)
+              if (!currentValue) {
+                result[currentKey] = true;  // Mark it as present
               } else {
-                // This is a string (remove quotes if present)
-                result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
+                currentValue = currentValue.trim();
+
+                // Parse the value
+                if (currentValue.match(/^\w+\s*\(inputs\(/)) {
+                  // This is a nested block
+                  result[currentKey] = currentValue;
+                } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
+                  // This is a number
+                  result[currentKey] = parseFloat(currentValue);
+                } else if (currentValue === 'true' || currentValue === 'false') {
+                  // This is a boolean
+                  result[currentKey] = currentValue === 'true';
+                } else {
+                  // This is a string (remove quotes if present)
+                  result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
+                }
               }
             }
 
@@ -705,13 +813,10 @@ const setupUnifiedStream = () => {
               if (parentBlock) {
                 console.log('[SSE CREATE] Attaching to parent block:', data.blockID);
 
-                // Find an appropriate input to connect to
-                // Try common statement inputs first
-                const statementInputs = ['BODY', 'DO', 'THEN', 'ELSE', 'STACK'];
+                // If input_name is specified, try to connect to that specific input first
                 let connected = false;
-
-                for (const inputName of statementInputs) {
-                  const input = parentBlock.getInput(inputName);
+                if (data.input_name) {
+                  const input = parentBlock.getInput(data.input_name);
                   if (input && input.type === Blockly.NEXT_STATEMENT) {
                     // Check if something is already connected
                     if (input.connection && !input.connection.targetBlock()) {
@@ -719,8 +824,7 @@ const setupUnifiedStream = () => {
                       if (newBlock.previousConnection) {
                         input.connection.connect(newBlock.previousConnection);
                         connected = true;
-                        console.log('[SSE CREATE] Connected to input:', inputName);
-                        break;
+                        console.log('[SSE CREATE] Connected to specified input:', data.input_name);
                       }
                     } else if (input.connection && input.connection.targetBlock()) {
                       // Find the last block in the stack
@@ -732,8 +836,44 @@ const setupUnifiedStream = () => {
                       if (lastBlock.nextConnection && newBlock.previousConnection) {
                         lastBlock.nextConnection.connect(newBlock.previousConnection);
                         connected = true;
-                        console.log('[SSE CREATE] Connected to end of stack in input:', inputName);
-                        break;
+                        console.log('[SSE CREATE] Connected to end of stack in specified input:', data.input_name);
+                      }
+                    }
+                  } else {
+                    error = `Specified input '${data.input_name}' not found or is not a statement input`;
+                    console.warn('[SSE CREATE]', error);
+                  }
+                }
+
+                // If not connected via specified input_name, try common statement inputs
+                if (!connected) {
+                  const statementInputs = ['BODY', 'DO', 'THEN', 'ELSE', 'STACK'];
+
+                  for (const inputName of statementInputs) {
+                    const input = parentBlock.getInput(inputName);
+                    if (input && input.type === Blockly.NEXT_STATEMENT) {
+                      // Check if something is already connected
+                      if (input.connection && !input.connection.targetBlock()) {
+                        // Connect directly
+                        if (newBlock.previousConnection) {
+                          input.connection.connect(newBlock.previousConnection);
+                          connected = true;
+                          console.log('[SSE CREATE] Connected to input:', inputName);
+                          break;
+                        }
+                      } else if (input.connection && input.connection.targetBlock()) {
+                        // Find the last block in the stack
+                        let lastBlock = input.connection.targetBlock();
+                        while (lastBlock.nextConnection && lastBlock.nextConnection.targetBlock()) {
+                          lastBlock = lastBlock.nextConnection.targetBlock();
+                        }
+                        // Connect to the end of the stack
+                        if (lastBlock.nextConnection && newBlock.previousConnection) {
+                          lastBlock.nextConnection.connect(newBlock.previousConnection);
+                          connected = true;
+                          console.log('[SSE CREATE] Connected to end of stack in input:', inputName);
+                          break;
+                        }
                       }
                     }
                   }

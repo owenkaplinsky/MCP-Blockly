@@ -223,6 +223,75 @@ chatGenerator.blockToCode = function (block, opt_thisOnly) {
       if (num !== null && num !== undefined) {
         inputs.push(`NUM: ${num}`);
       }
+    } else if (blockType === 'controls_if') {
+      // Special handling for if/else blocks
+      // Extract all condition values in the proper format: IF, IFELSEN0, IFELSEN1, etc.
+      const ifCount = (block.inputList.filter(input => input.name && input.name.match(/^IF\d+$/)).length) || 1;
+
+      // Get the first IF condition
+      const if0Input = block.getInput('IF0');
+      if (if0Input && if0Input.connection) {
+        const condValue = this.valueToCode(block, 'IF0', this.ORDER_ATOMIC);
+        if (condValue) {
+          inputs.push(`IF: ${condValue}`);
+        }
+      }
+
+      // Get all additional IF conditions (IF1, IF2, etc.) as IFELSEN0, IFELSEN1, etc.
+      for (let i = 1; i < ifCount; i++) {
+        const ifInput = block.getInput('IF' + i);
+        if (ifInput && ifInput.connection) {
+          const condValue = this.valueToCode(block, 'IF' + i, this.ORDER_ATOMIC);
+          if (condValue) {
+            inputs.push(`IFELSEN${i - 1}: ${condValue}`);
+          }
+        }
+      }
+
+      // Check if ELSE exists (look for DO blocks and see if there's an ELSE)
+      const hasElse = block.getInput('ELSE') !== null && block.getInput('ELSE') !== undefined;
+
+      // If ELSE exists, add it to inputs (it's just a marker, no condition value)
+      if (hasElse) {
+        inputs.push(`ELSE`);
+      }
+
+      // Generate the controls_if call with conditions
+      let code = `${block.id} | ${blockType}(inputs(${inputs.join(', ')}))`;
+
+      // Now get all the statement blocks with proper formatting
+      // DO0, DO1, etc. are indented under the if
+      // ELSE blocks are labeled with "Else:" prefix
+      for (let i = 0; i < ifCount; i++) {
+        const doInput = block.getInput('DO' + i);
+        if (doInput) {
+          const doCode = this.statementToCode(block, 'DO' + i);
+          if (doCode) {
+            // Indent each line of the statement code
+            const indentedCode = doCode.split('\n').map(line => line ? '    ' + line : '').join('\n');
+            code += '\n' + indentedCode;
+          }
+        }
+      }
+
+      // Get ELSE block if it exists - format it with "Else:" label
+      if (hasElse) {
+        const elseCode = this.statementToCode(block, 'ELSE');
+        if (elseCode) {
+          code += '\nElse:\n';
+          // Indent each line of the else code
+          const indentedCode = elseCode.split('\n').map(line => line ? '    ' + line : '').join('\n');
+          code += indentedCode;
+        }
+      }
+
+      // Handle the next block in the sequence for statement chaining
+      if (!opt_thisOnly) {
+        const nextCode = this.scrub_(block, code, opt_thisOnly);
+        return nextCode;
+      }
+
+      return code + '\n';
     } else {
       // Generic field value extraction for other blocks
       // Get all inputs to check for fields
@@ -266,7 +335,14 @@ chatGenerator.blockToCode = function (block, opt_thisOnly) {
       if (input.type === Blockly.NEXT_STATEMENT && input.connection) {
         const statementCode = this.statementToCode(block, input.name);
         if (statementCode) {
-          statements += statementCode;
+          // Indent statement code (4 spaces) if this block will be a statement block
+          if (!block.outputConnection) {
+            // Only indent for statement blocks; value blocks handle their own formatting
+            const indentedCode = statementCode.split('\n').map(line => line ? '    ' + line : '').join('\n');
+            statements += indentedCode;
+          } else {
+            statements += statementCode;
+          }
         }
       }
     }

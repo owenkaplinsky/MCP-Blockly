@@ -137,12 +137,6 @@ def delete_block(block_id):
 
 def create_block(block_spec, blockID=None, placement_type=None, input_name=None):
     try:
-        print(f"[CREATE REQUEST] Attempting to create block: {block_spec}")
-        if blockID:
-            print(f"[CREATE REQUEST] Placement type: {placement_type}, block ID: {blockID}")
-        if input_name:
-            print(f"[CREATE REQUEST] Input name: {input_name}")
-        
         # Generate a unique request ID
         import uuid
         request_id = str(uuid.uuid4())
@@ -160,7 +154,6 @@ def create_block(block_spec, blockID=None, placement_type=None, input_name=None)
         if input_name:
             queue_data["input_name"] = input_name
         creation_queue.put(queue_data)
-        print(f"[CREATE REQUEST] Added to queue with ID: {request_id}")
         
         # Wait for result with timeout
         import time
@@ -616,12 +609,33 @@ def create_gradio_interface():
     - Any block that outputs a result for something else to use
 
     ### How to Place Blocks
+    **IF/ELSE Blocks:**
+
+    The entire IF/ELSE structure must be created in one `create_block` call.
+
+    **Structure:**
+    `controls_if(inputs(IF: cond, IFELSEN0: cond2, IFELSEN1: cond3, ELSE))`
+
+    - `IF:` first condition (required)
+    - `IFELSEN#:` else-if conditions (optional)
+    - `ELSE` keyword (optional, no value)
+
+    **Do NOT:**
+    - Add ELSE or ELSE-IF later using `input_name`
+    - Give ELSE a value
+
+    **Correct placement after creation:**
+    - `input_name: "DO0"`: IF branch
+    - `input_name: "DO1"`: first ELSE-IF branch
+    - `input_name: "ELSE"`: ELSE branch
 
     **Placement types** - use `blockID` and `type` parameters:
     
     - `type: "under"` - For statement blocks inside containers. Create the container first, then create statement blocks using the container's ID.
       Example: Create a loop first, then use `blockID: loopID, type: "under"` to place code inside it.
       Also for stackable blocks: create one, get its ID, then create the next one with the previous block's ID and `type: "under"`.
+      **Optional: use `input_name` to specify which statement input to place the block in (e.g., "DO0", "DO1", "ELSE" for IF blocks).**
+      Example: `create_block(text_append(...), blockID: ifBlockID, type: "under", input_name: "DO0")` places the block in the first THEN branch of an IF block.
     
     - `type: "input"` - ONLY for value blocks placed in MCP output slots. Provide `input_name` with the output slot name (R0, R1, R2, etc).
       Example: `text(inputs(TEXT: "hello"))` with `type: "input", input_name: "R0"` places the text block in the MCP's first output slot.
@@ -756,7 +770,7 @@ def create_gradio_interface():
                     },
                     "input_name": {
                         "type": "string",
-                        "description": "Specific MCP input slot name when type is 'input'. Use 'RN', where N is the number of the output slot you want to put something into.",
+                        "description": "ONLY for two cases: placing value blocks into MCP output slots using 'R<N>', and placing statement blocks into specific branches of controls_if (DO0, DO1, ELSE). It must NEVER be used for anything else.",
                     },
                 },
                 "required": ["command"],
