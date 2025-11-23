@@ -590,7 +590,7 @@ const in_json = {
   "message0": "get %1 from JSON %2",
   "args0": [
     {
-      "type": "field_input",
+      "type": "input_value",
       "name": "NAME",
     },
     {

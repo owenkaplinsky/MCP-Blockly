@@ -57,6 +57,16 @@ export const toolbox = {
         {
           kind: 'block',
           type: 'in_json',
+          inputs: {
+            NAME: {
+              shadow: {
+                type: 'text',
+                fields: {
+                  text: "10",
+                },
+              },
+            },
+          },
         },
         {
           kind: 'block',

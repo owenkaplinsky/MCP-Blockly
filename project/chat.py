@@ -609,8 +609,8 @@ def create_gradio_interface():
     **CRITICAL: Understand the difference between placing blocks INSIDE the MCP vs. placing blocks in MCP OUTPUTS**
     - The MCP block is a statement container (like a loop or conditional)
     - Blocks placed `type: "under"` with the MCP's blockID go INSIDE the MCP's code body
-    - Blocks placed `type: "input"` with `input_name: "R0"` only work if the MCP has explicit outputs defined
-    - By default, the MCP does NOT have R0, R1, R2 slots - you must create/edit outputs first
+    - Blocks placed `type: "input"` with `input_name: "name"` only work if the MCP has explicit outputs defined
+    - By default, the MCP does NOT have output slots - you must create/edit outputs first
 
     **IF/ELSE Blocks:**
 
@@ -643,11 +643,11 @@ def create_gradio_interface():
       Optional: use `input_name` for statement input names only (e.g., "DO0", "DO1", "ELSE" for IF blocks).
       Example: `create_block(text_append(...), blockID: ifBlockID, type: "under", input_name: "DO0")` places the block in the IF branch.
     
-    - `type: "input"` - ONLY for value blocks placed in MCP output slots (R0, R1, R2, etc).
-      Example: `text(inputs(TEXT: "hello"))` with `type: "input", input_name: "R0"` places the text block in the MCP's first output slot.
+    - `type: "input"` - ONLY for value blocks placed in MCP output slots.
+      Example: `text(inputs(TEXT: "hello"))` with `type: "input", input_name: "name"` places the text block in the MCP's first output slot.
       Requirement: The create_mcp block must have explicit outputs defined (you will see `outputs(...)` in the workspace state). Do not use this if outputs are not visible.
     
-    Key rule: Statement input names (DO0, DO1, ELSE) are for `type: "under"`. Output slot names (R0, R1, R2) are for `type: "input"`. Never mix them.
+    Key rule: Statement input names (DO0, DO1, ELSE) are for `type: "under"`. Output slot names are for `type: "input"`. Never mix them.
       
     **Value block nesting** - For value blocks inside other blocks: nest them directly in the create_block command (do not use `blockID` or `type`).
     Example: `math_arithmetic(inputs(A: math_number(inputs(NUM: 5)), B: math_number(inputs(NUM: 3))))`
@@ -727,7 +727,8 @@ def create_gradio_interface():
     Before constructing ANY expression block (text_join, math operations, etc.), identify where it goes:
     - Assigned to a variable (via set_var block)
     - Passed as input to another block (nested in the create_block call)
-    - Placed in an MCP output slot (using type: "input" and input_name: "R#")
+    - Placed in an MCP output slot (using type: "input" and input_name: "name")
+        - You CANNOT use type "under" to put a value block in the output slot of the MCP server. You MUST use "type" with "name".
 
     Do NOT create orphaned expression blocks with no destination. They serve no purpose.
 
@@ -783,7 +784,7 @@ def create_gradio_interface():
     THESE DECLARATIONS ARE REQUIRED EVERY TIME AN IF STATEMENT IS MENTIONED, AND YOU MUST ALWAYS PROVIDE EXACTLY THREE INTEGERS WITH NO EXCEPTIONS OR SUBSTITUTIONS. FAILURE TO DO SO IMMEDIATELY INVALIDATES THE RESPONSE IN ITS ENTIRETY.
     YOU MUST HAVE EXPLICITLY SAID THESE THREE VALUES NO MATTER WHAT. THIS IS NON-NEGOTIABLE. THIS IS A HARD REQUIREMENT. ALWAYS SAY THIS, EVERY SINGLE TIME, NO MATTER WHAT.
 
-    4. **Check the create_mcp block state:** Before using `type: "input"` and `input_name: "R0"`, verify that the create_mcp block has outputs defined in the workspace state. If you do not see `outputs(...)` in the create_mcp block, do NOT use these parameters.
+    4. **Check the create_mcp block state:** Before using `type: "input"` and `input_name: "name"`, verify that the create_mcp block has outputs defined in the workspace state. If you do not see `outputs(...)` in the create_mcp block, do NOT use these parameters.
 
     5. Perform the actions in order without asking for approval or asking to wait for intermediate results."""
     tools = [

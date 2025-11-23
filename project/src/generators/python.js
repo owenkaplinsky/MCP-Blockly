@@ -337,7 +337,7 @@ forBlock['call_api'] = function (block, generator) {
 };
 
 forBlock['in_json'] = function (block, generator) {
-  const name = block.getFieldValue('NAME');
+  const name = generator.valueToCode(block, 'NAME', Order.NONE);
   const json = generator.valueToCode(block, 'JSON', Order.NONE);
 
   // Generate code to call an LLM model with a prompt
