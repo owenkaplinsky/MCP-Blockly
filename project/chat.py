@@ -609,6 +609,13 @@ def create_gradio_interface():
     - Any block that outputs a result for something else to use
 
     ### How to Place Blocks
+    
+    **CRITICAL: Understand the difference between placing blocks INSIDE the MCP vs. placing blocks in MCP OUTPUTS**
+    - The MCP block is a statement container (like a loop or conditional)
+    - Blocks placed `type: "under"` with the MCP's blockID go INSIDE the MCP's code body
+    - Blocks placed `type: "input"` with `input_name: "R0"` only work if the MCP has explicit outputs defined
+    - By default, the MCP does NOT have R0, R1, R2 slots - you must create/edit outputs first
+
     **IF/ELSE Blocks:**
 
     The entire IF/ELSE structure must be created in one `create_block` call.
@@ -636,10 +643,15 @@ def create_gradio_interface():
       Also for stackable blocks: create one, get its ID, then create the next one with the previous block's ID and `type: "under"`.
       **Optional: use `input_name` to specify which statement input to place the block in (e.g., "DO0", "DO1", "ELSE" for IF blocks).**
       Example: `create_block(text_append(...), blockID: ifBlockID, type: "under", input_name: "DO0")` places the block in the first THEN branch of an IF block.
+      **CRITICAL: When using `type: "under"`, `input_name` must ONLY contain "DO0", "DO1", "ELSE", or other statement input names. NEVER use R0, R1, R2, etc. with `type: "under"`.**
     
     - `type: "input"` - ONLY for value blocks placed in MCP output slots. Provide `input_name` with the output slot name (R0, R1, R2, etc).
       Example: `text(inputs(TEXT: "hello"))` with `type: "input", input_name: "R0"` places the text block in the MCP's first output slot.
-
+    **CRITICAL:** NEVER use `type: "input"` and `input_name` for standalone value expressions that aren't being assigned to an MCP output. Only use these parameters
+    if the workspace shows the create_mcp block has explicit outputs defined (you will see `outputs(...)` in the state). If you cannot see outputs defined in the MCP
+    block, do NOT use `type: "input"` at all.
+    **CRITICAL: NEVER combine `type: "under"` with `input_name: "R0"`, `"R1"`, `"R2"`, etc. These R-numbered slots are only for `type: "input"` when placing into MCP outputs.**
+      
     **Value block nesting** - For value blocks inside other blocks: nest them directly in the create_block command (do not use `blockID` or `type`).
     Example: `math_arithmetic(inputs(A: math_number(inputs(NUM: 5)), B: math_number(inputs(NUM: 3))))`
 
@@ -728,7 +740,15 @@ def create_gradio_interface():
 
     3. **Create a build order**: which blocks are top-level, which nest inside others, which are value expressions that must be built in one call.
 
-    4. Perform the actions in order without asking for approval or asking to wait for intermediate results.
+    4. **Check the create_mcp block state:** Before using `type: "input"` and `input_name: "R0"`, verify that the create_mcp block has outputs defined in the workspace state. If you do not see `outputs(...)` in the create_mcp block, do NOT use these parameters.
+
+    5. **Understand MCP block placement:** When placing blocks under the MCP block itself (as opposed to inside its outputs):
+       - Use `type: "under"` with the MCP's `blockID`
+       - Do NOT use `input_name: "R0"`, `"R1"`, etc. (those are only for output slots)
+       - The MCP block is a statement container, not an output slot
+       - If you're defining what the MCP returns, you must either create output blocks inside the MCP, or edit the MCP block to add outputs first
+
+    6. Perform the actions in order without asking for approval or asking to wait for intermediate results.
 
     """
 
@@ -770,7 +790,7 @@ def create_gradio_interface():
                     },
                     "input_name": {
                         "type": "string",
-                        "description": "ONLY for two cases: placing value blocks into MCP output slots using 'R<N>', and placing statement blocks into specific branches of controls_if (DO0, DO1, ELSE). It must NEVER be used for anything else.",
+                        "description": "ONLY for two cases: placing value blocks into MCP output slots using 'R<N>', and placing statement blocks into specific branches of controls_if (DO0, DO1, ELSE). NEVER USE THIS PARAMETER UNLESS YOU ARE DOING ONE OF THOSE TWO EXACT THINGS.",
                     },
                 },
                 "required": ["command"],
@@ -967,7 +987,8 @@ def create_gradio_interface():
                     instructions=deployment_instructions,
                     input=temp_input_items + [{"role": "user", "content": current_prompt}],
                     tools=dynamic_tools,
-                    tool_choice="auto"
+                    tool_choice="auto",
+                    parallel_tool_calls=False
                 )
                 
                 # print(response)

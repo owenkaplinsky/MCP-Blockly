@@ -408,24 +408,107 @@ const setupUnifiedStream = () => {
             const blockType = blockMatch[1];
             let content = blockMatch[2].trim();
 
-            // Remove the last closing parenthesis and trim
-            if (content.endsWith(')')) {
-              content = content.slice(0, -1).trim();
+            // We need to find the matching closing parenthesis for blockType(
+            // Count from the beginning and find where the matching ) is
+            let parenCount = 1; // We already have the opening (
+            let matchIndex = -1;
+            let inQuotes = false;
+            let quoteChar = '';
+
+            for (let i = 0; i < content.length; i++) {
+              const char = content[i];
+
+              // Handle quotes
+              if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {
+                if (!inQuotes) {
+                  inQuotes = true;
+                  quoteChar = char;
+                } else if (char === quoteChar) {
+                  inQuotes = false;
+                }
+              }
+
+              // Only count parens outside quotes
+              if (!inQuotes) {
+                if (char === '(') parenCount++;
+                else if (char === ')') {
+                  parenCount--;
+                  if (parenCount === 0) {
+                    matchIndex = i;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Extract content up to the matching closing paren
+            if (matchIndex >= 0) {
+              content = content.slice(0, matchIndex).trim();
+            } else {
+              // Fallback: remove last paren if present
+              if (content.endsWith(')')) {
+                content = content.slice(0, -1).trim();
+              }
             }
 
             console.log('[SSE CREATE] Parsing block:', blockType, 'with content:', content);
 
             // Check if this has inputs() wrapper
             let inputsContent = content;
-            if (content.startsWith('inputs(') && content.endsWith(')')) {
-              inputsContent = content.slice(7, -1); // Remove 'inputs(' and ')'
+            if (content.startsWith('inputs(')) {
+              // Find the matching closing parenthesis for inputs(
+              parenCount = 1;
+              matchIndex = -1;
+              inQuotes = false;
+              quoteChar = '';
+
+              for (let i = 7; i < content.length; i++) { // Start after 'inputs('
+                const char = content[i];
+
+                // Handle quotes
+                if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {
+                  if (!inQuotes) {
+                    inQuotes = true;
+                    quoteChar = char;
+                  } else if (char === quoteChar) {
+                    inQuotes = false;
+                  }
+                }
+
+                // Only count parens outside quotes
+                if (!inQuotes) {
+                  if (char === '(') parenCount++;
+                  else if (char === ')') {
+                    parenCount--;
+                    if (parenCount === 0) {
+                      matchIndex = i;
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // Extract content between inputs( and its matching )
+              if (matchIndex >= 0) {
+                inputsContent = content.slice(7, matchIndex);
+              } else {
+                // Fallback: remove inputs( and last )
+                if (content.endsWith(')')) {
+                  inputsContent = content.slice(7, -1);
+                } else {
+                  inputsContent = content.slice(7);
+                }
+              }
             }
+
+            console.log('[SSE CREATE] inputsContent to parse:', inputsContent);
 
             // Create the block
             const newBlock = ws.newBlock(blockType);
 
             if (inputsContent) {
               // Parse the inputs content
+              console.log('[SSE CREATE] About to call parseInputs with:', inputsContent);
               const inputs = parseInputs(inputsContent);
               console.log('[SSE CREATE] Parsed inputs:', inputs);
 
