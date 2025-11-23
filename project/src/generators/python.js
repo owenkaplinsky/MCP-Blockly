@@ -341,7 +341,7 @@ forBlock['in_json'] = function (block, generator) {
   const json = generator.valueToCode(block, 'JSON', Order.NONE);
 
   // Generate code to call an LLM model with a prompt
-  const code = `${json}["${name}"]`;
+  const code = `${json}[${name}]`;
   return [code, Order.NONE];
 };
 
