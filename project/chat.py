@@ -39,6 +39,10 @@ creation_results = {}
 variable_queue = queue.Queue()
 variable_results = {}
 
+# Queue for edit MCP requests and results storage
+edit_mcp_queue = queue.Queue()
+edit_mcp_results = {}
+
 # Global variable to store the deployed HF MCP server URL
 current_mcp_server_url = None
 
@@ -223,6 +227,53 @@ def create_variable(var_name):
         traceback.print_exc()
         return f"Error creating variable: {str(e)}"
 
+def edit_mcp(inputs=None, outputs=None):
+    """Edit the inputs and outputs of the create_mcp block"""
+    try:
+        print(f"[EDIT MCP REQUEST] Attempting to edit MCP block: inputs={inputs}, outputs={outputs}")
+        
+        # Generate a unique request ID
+        request_id = str(uuid.uuid4())
+        
+        # Clear any old results for this request ID first
+        if request_id in edit_mcp_results:
+            edit_mcp_results.pop(request_id)
+        
+        # Build the edit data
+        edit_data = {"request_id": request_id}
+        if inputs is not None:
+            edit_data["inputs"] = inputs
+        if outputs is not None:
+            edit_data["outputs"] = outputs
+        
+        # Add to edit MCP queue
+        edit_mcp_queue.put(edit_data)
+        print(f"[EDIT MCP REQUEST] Added to queue with ID: {request_id}")
+        
+        # Wait for result with timeout
+        timeout = 8  # 8 seconds timeout
+        start_time = time.time()
+        check_interval = 0.05  # Check more frequently
+        
+        while time.time() - start_time < timeout:
+            if request_id in edit_mcp_results:
+                result = edit_mcp_results.pop(request_id)
+                print(f"[EDIT MCP RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
+                if result["success"]:
+                    return f"[TOOL] Successfully edited MCP block inputs/outputs"
+                else:
+                    return f"[TOOL] Failed to edit MCP block: {result.get('error', 'Unknown error')}"
+            time.sleep(check_interval)
+        
+        print(f"[EDIT MCP TIMEOUT] No response received for request {request_id} after {timeout} seconds")
+        return f"Timeout waiting for MCP edit confirmation"
+            
+    except Exception as e:
+        print(f"[EDIT MCP ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error editing MCP block: {str(e)}"
+
 # Unified Server-Sent Events endpoint for all workspace operations
 @app.get("/unified_stream")
 async def unified_stream():
@@ -288,6 +339,24 @@ async def unified_stream():
                         variable_request["type"] = "variable"  # Add type identifier
                         print(f"[SSE SEND] Sending variable creation request with ID: {request_id}")
                         yield f"data: {json.dumps(variable_request)}\n\n"
+                        
+                        # Clear from sent_requests after 10 seconds
+                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
+                    else:
+                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
+                
+                # Check edit MCP queue
+                elif not edit_mcp_queue.empty():
+                    edit_request = edit_mcp_queue.get_nowait()
+                    request_id = edit_request.get("request_id")
+                    request_key = f"edit_mcp_{request_id}"
+                    
+                    # Avoid sending duplicate requests too quickly
+                    if request_key not in sent_requests:
+                        sent_requests.add(request_key)
+                        edit_request["type"] = "edit_mcp"  # Add type identifier
+                        print(f"[SSE SEND] Sending edit MCP request with ID: {request_id}")
+                        yield f"data: {json.dumps(edit_request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
                         asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
@@ -371,6 +440,24 @@ async def variable_result(request: Request):
         # Store the result for the create_variable function to retrieve
         variable_results[request_id] = data
         print(f"[VARIABLE RESULT STORED] Results dict now has {len(variable_results)} items")
+    
+    return {"received": True}
+
+# Endpoint to receive edit MCP results from frontend
+@app.post("/edit_mcp_result")
+async def edit_mcp_result(request: Request):
+    """Receive edit MCP results from the frontend"""
+    data = await request.json()
+    request_id = data.get("request_id")
+    success = data.get("success")
+    error = data.get("error")
+    
+    print(f"[EDIT MCP RESULT RECEIVED] request_id={request_id}, success={success}, error={error}")
+    
+    if request_id:
+        # Store the result for the edit_mcp function to retrieve
+        edit_mcp_results[request_id] = data
+        print(f"[EDIT MCP RESULT STORED] Results dict now has {len(edit_mcp_results)} items")
     
     return {"received": True}
 
@@ -667,6 +754,38 @@ Note: Users can see tool response outputs verbatim. You don't have to repeat the
         },
         {
             "type": "function",
+            "name": "edit_mcp",
+            "description": "Edit the inputs and outputs of the create_mcp block.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "inputs": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string" },
+                                "type": { "type": "string", "enum": ["string", "integer", "list"] }
+                            },
+                            "required": ["name", "type"]
+                        }
+                    },
+                    "outputs": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string" },
+                                "type": { "type": "string", "enum": ["string", "integer", "list"] }
+                            },
+                            "required": ["name", "type"]
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
             "name": "deploy_to_huggingface",
             "description": "Deploy the generated MCP tool to a Hugging Face Space. Requires a Hugging Face API key to be set.",
             "parameters": {
@@ -884,6 +1003,13 @@ Note: Users can see tool response outputs verbatim. You don't have to repeat the
                             print(Fore.YELLOW + f"Agent created variable with name `{name}`." + Style.RESET_ALL)
                             tool_result = create_variable(name)
                             result_label = "Create Var Operation"
+                        
+                        elif function_name == "edit_mcp":
+                            inputs = function_args.get("inputs", None)
+                            outputs = function_args.get("outputs", None)
+                            print(Fore.YELLOW + f"Agent editing MCP block: inputs={inputs}, outputs={outputs}." + Style.RESET_ALL)
+                            tool_result = edit_mcp(inputs, outputs)
+                            result_label = "Edit MCP Operation"
                         
                         elif function_name == "deploy_to_huggingface":
                             space_name = function_args.get("space_name", "")

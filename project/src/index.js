@@ -243,6 +243,8 @@ const setupUnifiedStream = () => {
         requestKey = `create_${data.request_id}`;
       } else if (data.type === 'variable') {
         requestKey = `variable_${data.request_id}`;
+      } else if (data.type === 'edit_mcp') {
+        requestKey = `edit_mcp_${data.request_id}`;
       }
 
       // Skip if we've already processed this request
@@ -256,8 +258,91 @@ const setupUnifiedStream = () => {
         setTimeout(() => processedRequests.delete(requestKey), 10000);
       }
 
+      // Handle edit MCP requests
+      if (data.type === 'edit_mcp' && data.request_id) {
+        console.log('[SSE] Received edit MCP request:', data);
+
+        let success = false;
+        let error = null;
+
+        try {
+          // Find the create_mcp block
+          const mcpBlocks = ws.getBlocksByType('create_mcp');
+          const mcpBlock = mcpBlocks[0];
+
+          if (!mcpBlock) {
+            throw new Error('No create_mcp block found in workspace');
+          }
+
+          // Disable events to prevent infinite loops
+          Blockly.Events.disable();
+
+          try {
+            // Create a container block for the mutator
+            const containerBlock = ws.newBlock('container');
+            containerBlock.initSvg();
+
+            // Build inputs if provided
+            if (data.inputs && Array.isArray(data.inputs)) {
+              let connection = containerBlock.getInput('STACK').connection;
+              for (let idx = 0; idx < data.inputs.length; idx++) {
+                const input = data.inputs[idx];
+                const itemBlock = ws.newBlock('container_input');
+                itemBlock.initSvg();
+                itemBlock.setFieldValue(input.type || 'string', 'TYPE');
+                itemBlock.setFieldValue(input.name || '', 'NAME');
+                connection.connect(itemBlock.previousConnection);
+                connection = itemBlock.nextConnection;
+              }
+            }
+
+            // Build outputs if provided
+            if (data.outputs && Array.isArray(data.outputs)) {
+              let connection2 = containerBlock.getInput('STACK2').connection;
+              for (let idx = 0; idx < data.outputs.length; idx++) {
+                const output = data.outputs[idx];
+                const itemBlock = ws.newBlock('container_output');
+                itemBlock.initSvg();
+                itemBlock.setFieldValue(output.type || 'string', 'TYPE');
+                itemBlock.setFieldValue(output.name || 'output', 'NAME');
+                connection2.connect(itemBlock.previousConnection);
+                connection2 = itemBlock.nextConnection;
+              }
+            }
+
+            // Apply changes using the compose method
+            mcpBlock.compose(containerBlock);
+
+            // Clean up
+            containerBlock.dispose();
+            success = true;
+            console.log('[SSE] Successfully edited MCP block');
+          } finally {
+            Blockly.Events.enable();
+          }
+        } catch (e) {
+          error = e.toString();
+          console.error('[SSE] Error editing MCP block:', e);
+        }
+
+        // Send result back to backend immediately
+        console.log('[SSE] Sending edit MCP result:', { request_id: data.request_id, success, error });
+        fetch('/edit_mcp_result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_id: data.request_id,
+            success: success,
+            error: error
+          })
+        }).then(response => {
+          console.log('[SSE] Edit MCP result sent successfully');
+        }).catch(err => {
+          console.error('[SSE] Error sending edit MCP result:', err);
+        });
+      }
       // Handle deletion requests
-      if (data.type === 'delete' && data.block_id) {
+      else if (data.type === 'delete' && data.block_id) {
         console.log('[SSE] Received deletion request for block:', data.block_id);
 
         // Try to delete the block

@@ -50,6 +50,10 @@ async def deletion_result_route(request: Request):
 async def variable_result_route(request: Request):
     return await chat.variable_result(request)
 
+@app.post("/edit_mcp_result")
+async def edit_mcp_result_route(request: Request):
+    return await chat.edit_mcp_result(request)
+
 
 # === test.py API endpoints ===
 @app.post("/update_code")
