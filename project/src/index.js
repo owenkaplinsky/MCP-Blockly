@@ -773,7 +773,6 @@ const setupUnifiedStream = () => {
 
             // Initialize the block (renders it)
             newBlock.initSvg();
-            console.log('[SSE CREATE] === VERSION 2.0 - After initSvg, block type:', newBlock.type);
 
             // Apply pending controls_if mutations (must be after initSvg)
             try {
@@ -1368,8 +1367,8 @@ const updateCode = () => {
 
   // Replace Number with numbers.Number and add numbers import
   if (hasNumberCheck) {
-    code = code.replace(/isinstance\(([^,]+),\s*Number\)/g, 'isinstance($1, numbers.Number)');
-    code = "import numbers\n\n" + code;
+    code = code.replace(/isinstance\(([^,]+),\s*Number\)/g, 'isinstance($1, numbers_import.Number)');
+    code = "import numbers as numbers_import\n\n" + code;
   }
 
   code = "import gradio as gr\nimport math\n\n" + code

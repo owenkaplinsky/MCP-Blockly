@@ -809,10 +809,10 @@ def create_gradio_interface():
             "parameters": {
                 "type": "object",
                 "properties": {
-                    # Throwaway parameter to get the agent to think about IF rules.
-                    "if_notes": {
+                    # Throwaway parameter to get the agent to think about what it wants to do again before it does it to increase reliability.
+                    "notes": {
                         "type": "string",
-                        "description": "If you are going to make an if statement, YOU ARE REQUIRED TO USE THIS. Write the amount if IF/IFELSE/ELSE you will need. You MUST use this amount in the command. If you aren't making an if, say 'N/A'.",
+                        "description": "Write the exact thing you need to make with this call. Cite your TODO list. If you're making an IF, say how many IF branches and whether it has an ELSE. Say the entire thing in plain text that your goal is.",
                     },
                     "command": {
                         "type": "string",
@@ -832,7 +832,7 @@ def create_gradio_interface():
                         "description": "ONLY for two cases: placing value blocks into MCP output slots using 'R<N>', and placing statement blocks into specific branches of controls_if (DO0, DO1, ELSE). NEVER USE THIS PARAMETER UNLESS YOU ARE DOING ONE OF THOSE TWO EXACT THINGS.",
                     },
                 },
-                "required": ["if_notes", "command"],
+                "required": ["notes", "command"],
             }
         },
         {
@@ -946,7 +946,7 @@ def create_gradio_interface():
         
         # Iteration control
         accumulated_response = ""
-        max_iterations = 10
+        max_iterations = 15
         current_iteration = 0
         
         # Start with original user message
