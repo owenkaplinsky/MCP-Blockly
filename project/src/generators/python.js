@@ -164,17 +164,6 @@ forBlock['create_mcp'] = function (block, generator) {
     }
   }
 
-  // Create Gradio Interface with dynamic I/O
-  // Always include outputs parameter, use empty list if no outputs
-  code += `\ndemo = gr.Interface(
-  fn=create_mcp,
-  inputs=[${gradioInputs.join(', ')}],
-  outputs=[${gradioOutputs.join(', ')}],
-  )
-
-demo.launch(mcp_server=True)
-`;
-
   return code;
 };
 

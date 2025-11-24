@@ -1284,7 +1284,83 @@ const updateCode = () => {
     code = "from sympy import isprime\n\n" + code;
   }
 
-  code = "import gradio as gr\nimport math\n\n" + code;
+  code = "import gradio as gr" + code;
+
+  // Extract input and output counts from the create_mcp block to build Gradio interface
+  const mcpBlocks = ws.getBlocksByType('create_mcp');
+  if (mcpBlocks.length > 0) {
+    const mcpBlock = mcpBlocks[0];
+    
+    // Build list of Gradio input components based on input types
+    const gradioInputs = [];
+    if (mcpBlock.inputCount_ && mcpBlock.inputCount_ > 0 && mcpBlock.getInput('X0')) {
+      for (let k = 0; k < mcpBlock.inputCount_; k++) {
+        const type = mcpBlock.inputTypes_[k];
+        switch (type) {
+          case 'integer':
+            gradioInputs.push('gr.Number()');
+            break;
+          case 'float':
+            gradioInputs.push('gr.Number()');
+            break;
+          case 'string':
+            gradioInputs.push('gr.Textbox()');
+            break;
+          case 'list':
+            gradioInputs.push('gr.Dataframe()');
+            break;
+          case 'boolean':
+            gradioInputs.push('gr.Checkbox()');
+            break;
+          case 'any':
+            gradioInputs.push('gr.JSON()');
+            break;
+          default:
+            gradioInputs.push('gr.Textbox()');
+        }
+      }
+    }
+    
+    // Build list of Gradio output components based on output types
+    const gradioOutputs = [];
+    if (mcpBlock.outputCount_ && mcpBlock.outputCount_ > 0 && mcpBlock.getInput('R0')) {
+      for (let k = 0; k < mcpBlock.outputCount_; k++) {
+        const type = mcpBlock.outputTypes_[k];
+        switch (type) {
+          case 'integer':
+            gradioOutputs.push('gr.Number()');
+            break;
+          case 'float':
+            gradioOutputs.push('gr.Number()');
+            break;
+          case 'string':
+            gradioOutputs.push('gr.Textbox()');
+            break;
+          case 'list':
+            gradioOutputs.push('gr.Dataframe()');
+            break;
+          case 'boolean':
+            gradioOutputs.push('gr.Checkbox()');
+            break;
+          case 'any':
+            gradioOutputs.push('gr.JSON()');
+            break;
+          default:
+            gradioOutputs.push('gr.Textbox()');
+        }
+      }
+    }
+    
+    // Append Gradio interface code at the very end
+    code += `\ndemo = gr.Interface(
+  fn=create_mcp,
+  inputs=[${gradioInputs.join(', ')}],
+  outputs=[${gradioOutputs.join(', ')}],
+  )
+
+demo.launch(mcp_server=True)
+`;
+  }
 
   if (codeEl) {
     codeEl.textContent = code;
