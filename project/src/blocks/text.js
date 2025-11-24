@@ -954,11 +954,6 @@ Blockly.Extensions.register('func_call_dynamic', function () {
     }
   };
 
-  // Defer initial shape update to ensure block is fully initialized
-  setTimeout(() => {
-    block.updateShape_();
-  }, 0);
-
   // Listen for dropdown changes
   block.getField('FUNC_NAME').setValidator(function (newValue) {
     const block = this.getSourceBlock();
@@ -1115,15 +1110,15 @@ Blockly.Blocks['func_call'] = {
     };
   },
 
-  // Load the saved state and rebuild the block
-  loadExtraState: function (state) {
+  loadExtraState(state) {
     this.currentFunction_ = state.currentFunction;
     this.paramCount_ = state.paramCount;
-    // The shape will be updated by the extension after loading
-    if (this.updateShape_) {
-      setTimeout(() => {
-        this.updateShape_();
-      }, 0);
+
+    // Ensure ARG0..ARGN exist so the deserializer can reconnect children
+    for (let i = 0; i < this.paramCount_; i++) {
+      if (!this.getInput('ARG' + i)) {
+        this.appendValueInput('ARG' + i).appendField("");
+      }
     }
   }
 };

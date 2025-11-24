@@ -310,7 +310,8 @@ forBlock['llm_call'] = function (block, generator) {
 };
 
 forBlock['func_call'] = function (block, generator) {
-  const funcName = block.getFieldValue('FUNC_NAME');
+  // Prefer the serialized function name, fall back to the field if needed
+  const funcName = block.currentFunction_ || block.getFieldValue('FUNC_NAME');
 
   if (!funcName || funcName === 'NONE') {
     return ['None', Order.ATOMIC];
@@ -330,14 +331,12 @@ forBlock['func_call'] = function (block, generator) {
   const args = [];
   let i = 0;
 
-  // Check for inputs that actually exist on the block
   while (block.getInput('ARG' + i)) {
     const argValue = generator.valueToCode(block, 'ARG' + i, Order.NONE);
     args.push(argValue || 'None');
     i++;
   }
 
-  // Generate the function call
   const code = `${funcName}(${args.join(', ')})`;
   return [code, Order.FUNCTION_CALL];
 };
