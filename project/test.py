@@ -250,6 +250,8 @@ def build_interface():
                                 display_type = 'float'
                             elif 'list' in type_hint:
                                 display_type = 'list'
+                            elif 'bool' in type_hint:
+                                display_type = 'boolean'
                             else:
                                 display_type = 'string'
                             params.append({
@@ -283,13 +285,14 @@ def build_interface():
                     out_types = []
             else:
                 out_types = []
-            # Convert output types: handle string, integer, float, list, boolean
+            # Convert output types: handle string, integer, float, list, boolean, any
             out_types = [
                 "string" if t == "str" else 
                 "integer" if t == "int" else 
                 "float" if t == "float" else 
                 "list" if t == "list" else 
-                "boolean" if t == "bool" else t 
+                "boolean" if t == "bool" else 
+                "any" if t == "Any" else t 
                 for t in out_types
             ]
 
@@ -336,7 +339,8 @@ def build_interface():
                         "integer" if t == "int" else 
                         "float" if t == "float" else 
                         "list" if t == "list" else 
-                        "boolean" if t == "bool" else t 
+                        "boolean" if t == "bool" else 
+                        "any" if t == "Any" else t 
                         for t in out_types
                     ]
                 except Exception:
@@ -344,8 +348,8 @@ def build_interface():
 
             # If result is a tuple or list
             if isinstance(result, (tuple, list)):
-                # Check if the first output type is "list" - if so, convert to string representation
-                if out_types and out_types[0] == "list":
+                # Check if the first output type is "list" or "any" - if so, convert to string representation
+                if out_types and out_types[0] in ("list", "any"):
                     return [str(result)] + [""] * 9
                 else:
                     # Multiple outputs - each item is a separate output

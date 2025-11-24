@@ -123,6 +123,9 @@ forBlock['create_mcp'] = function (block, generator) {
         case 'boolean':
           gradioInputs.push('gr.Checkbox()');
           break;
+        case 'any':
+          gradioInputs.push('gr.JSON()');
+          break;
         default:
           gradioInputs.push('gr.Textbox()');
       }
@@ -151,6 +154,9 @@ forBlock['create_mcp'] = function (block, generator) {
           break;
         case 'boolean':
           gradioOutputs.push('gr.Checkbox()');
+          break;
+        case 'any':
+          gradioOutputs.push('gr.JSON()');
           break;
         default:
           gradioOutputs.push('gr.Textbox()');

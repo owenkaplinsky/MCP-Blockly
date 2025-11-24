@@ -504,6 +504,7 @@ const container_input = {
         ["Float", "float"],
         ["List", "list"],
         ["Boolean", "boolean"],
+        ["Any", "any"],
       ]
     },
     { type: "field_input", name: "NAME" },
@@ -526,6 +527,7 @@ const container_output = {
         ["Float", "float"],
         ["List", "list"],
         ["Boolean", "boolean"],
+        ["Any", "any"],
       ]
     },
     { type: "field_input", name: "NAME" },
