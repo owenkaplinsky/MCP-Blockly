@@ -1,4 +1,4 @@
-gradio
+gradio[mcp,oauth]==6.0.0
 dotenv
 openai
 requests

@@ -489,10 +489,11 @@ def deploy_to_huggingface(space_name):
         )
         
         # Create requirements.txt
-        requirements_content = """gradio
+        requirements_content = """gradio[mcp,oauth]==6.0.0
 openai
 requests
 huggingface_hub
+sympy
 """
         
         api.upload_file(
@@ -1002,7 +1003,7 @@ def create_gradio_interface():
 
                                 parts = url.split("/spaces/")
                                 user, space = parts[1].split("/")
-                                return f"https://{user}-{space}.hf.space/gradio_api/mcp"
+                                return f"https://{user}-{space}.hf.space/gradio_api/mcp/"
 
                             live_mcp_url = convert_repo_to_live_mcp(current_mcp_server_url)
 
