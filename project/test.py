@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import os
 import ast
+import inspect
+import pandas as pd
 
 app = FastAPI()
 
@@ -136,7 +138,6 @@ def execute_blockly_logic(user_inputs):
         exec("import os", env)
         exec(code_to_run, env)
         if "create_mcp" in env:
-            import inspect
             sig = inspect.signature(env["create_mcp"])
             params = list(sig.parameters.values())
 
@@ -189,6 +190,9 @@ def execute_blockly_logic(user_inputs):
                 except Exception:
                     # If conversion fails, pass the raw input
                     typed_args.append(arg)
+
+            if len(typed_args) > 0 and isinstance(typed_args[0], list):
+                typed_args[0] = pd.DataFrame(typed_args[0])
 
             result = env["create_mcp"](*typed_args)
         elif "process_input" in env:

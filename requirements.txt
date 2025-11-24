@@ -6,3 +6,4 @@ colorama
 huggingface_hub
 gradio_client
 mcp
+pandas

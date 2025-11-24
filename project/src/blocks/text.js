@@ -653,6 +653,30 @@ const lists_contains = {
   helpUrl: "",
 };
 
+// Cast block for type conversion
+const cast_as = {
+  type: "cast_as",
+  message0: "cast %1 as %2",
+  args0: [
+    { type: "input_value", name: "VALUE", check: null },
+    {
+      type: "field_dropdown",
+      name: "TYPE",
+      options: [
+        ["int", "int"],
+        ["float", "float"],
+        ["str", "str"],
+        ["bool", "bool"],
+      ],
+    },
+  ],
+  output: null,
+  colour: 210,
+  inputsInline: true,
+  tooltip: "Convert a value to a different type",
+  helpUrl: "",
+};
+
 // Dynamic function call block
 const func_call = {
   type: "func_call",
@@ -1157,4 +1181,5 @@ export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   call_api,
   in_json,
   lists_contains,
+  cast_as,
 ]);

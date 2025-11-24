@@ -696,6 +696,8 @@ def create_gradio_interface():
 
     Deployment is done only once; the deployed MCP may be run any number of times afterward.
 
+    NEVER TRY DEPLOYING MORE THAN ONCE. YOU ONLY EVER NEED TO DEPLOY ONCE. AFTER THAT YOU CAN ONLY RUN IT.
+
     ---
 
     ## VALUE BLOCK CONSTRUCTION: ABSOLUTE RULE
@@ -1014,13 +1016,8 @@ def create_gradio_interface():
                                 "require_approval": "never"
                             }
                             dynamic_tools.append(mcp_tool)
-                            print(f"[MCP] Injected MCP tool for server: {current_mcp_server_url}")
-                        else:
-                            print(f"[MCP] Skipping MCP tool injection - space not running yet")
                     except Exception as mcp_error:
                         print(f"[MCP ERROR] Failed during MCP injection: {mcp_error}")
-                        print(f"[MCP] Continuing without MCP tools...")
-                        # Continue without MCP - don't crash
                 
                 # Add deployment status message to instructions if deployment just happened and space is not running
                 deployment_instructions = instructions
@@ -1083,6 +1080,14 @@ def create_gradio_interface():
                         # Execute the tool
                         tool_result = None
                         result_label = ""
+                        
+                        # Log MCP tool calls
+                        if function_name not in ("delete_block", "create_block", "create_variable", "edit_mcp", "deploy_to_huggingface"):
+                            # This is an MCP tool call
+                            print(Fore.GREEN + f"[MCP TOOL CALL] Running MCP with inputs:" + Style.RESET_ALL)
+                            print(Fore.GREEN + f"  Tool name: {function_name}" + Style.RESET_ALL)
+                            for key, value in function_args.items():
+                                print(Fore.GREEN + f"  {key}: {value}" + Style.RESET_ALL)
                         
                         if function_name == "delete_block":
                             block_id = function_args.get("id", "")

@@ -17,6 +17,7 @@ forBlock['create_mcp'] = function (block, generator) {
   }
 
   const typedInputs = [];
+  const listParams = [];
   let i = 0;
 
   // Build list of typed input parameters with inferred Python types
@@ -39,6 +40,7 @@ forBlock['create_mcp'] = function (block, generator) {
           break;
         case 'list':
           pyType = 'list';
+          listParams.push(paramName);
           break;
         case 'boolean':
           pyType = 'bool';
@@ -53,6 +55,14 @@ forBlock['create_mcp'] = function (block, generator) {
 
   // Main function body and return value(s)
   let body = generator.statementToCode(block, 'BODY');
+  
+  // Add list conversion code at the beginning of the body
+  let listConversionCode = '';
+  for (const param of listParams) {
+    listConversionCode += `  ${param} = ${param}.iloc[:, 0].tolist()\n`;
+  }
+  
+  body = listConversionCode + body;
   let returnStatement = '';
 
   const returnValues = [];
@@ -381,4 +391,13 @@ forBlock['lists_contains'] = function (block, generator) {
   // Generate code to check if item is in list
   const code = `${item} in ${list}`;
   return [code, Order.ATOMIC];
+};
+
+forBlock['cast_as'] = function (block, generator) {
+  const value = generator.valueToCode(block, 'VALUE', Order.NONE) || "''";
+  const type = block.getFieldValue('TYPE');
+
+  // Generate code to cast value to the specified type
+  const code = `${type}(${value})`;
+  return [code, Order.FUNCTION_CALL];
 };
