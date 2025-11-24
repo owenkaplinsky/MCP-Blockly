@@ -39,7 +39,7 @@ forBlock['create_mcp'] = function (block, generator) {
           pyType = 'str';
           break;
         case 'list':
-          pyType = 'list';
+          pyType = 'str';
           listParams.push(paramName);
           break;
         case 'boolean':
@@ -58,8 +58,10 @@ forBlock['create_mcp'] = function (block, generator) {
   
   // Add list conversion code at the beginning of the body
   let listConversionCode = '';
-  for (const param of listParams) {
-    listConversionCode += `  ${param} = ${param}.iloc[:, 0].tolist()\n`;
+  if (listParams.length > 0) {
+    for (const param of listParams) {
+      listConversionCode += `  try:\n    ${param} = ast.literal_eval(${param})\n  except:\n    ${param} = [${param}]\n`;
+    }
   }
   
   body = listConversionCode + body;
@@ -128,7 +130,7 @@ forBlock['create_mcp'] = function (block, generator) {
           gradioInputs.push('gr.Textbox()');
           break;
         case 'list':
-          gradioInputs.push('gr.Dataframe()');
+          gradioInputs.push('gr.Textbox()');
           break;
         case 'boolean':
           gradioInputs.push('gr.Checkbox()');

@@ -1284,7 +1284,7 @@ const updateCode = () => {
     code = "from sympy import isprime\n\n" + code;
   }
 
-  code = "import gradio as gr\n" + code;
+  code = "import gradio as gr\nimport ast\n" + code;
 
   // Extract input and output counts from the create_mcp block to build Gradio interface
   const mcpBlocks = ws.getBlocksByType('create_mcp');
@@ -1307,7 +1307,7 @@ const updateCode = () => {
             gradioInputs.push('gr.Textbox()');
             break;
           case 'list':
-            gradioInputs.push('gr.Dataframe()');
+            gradioInputs.push('gr.Textbox()');
             break;
           case 'boolean':
             gradioInputs.push('gr.Checkbox()');
