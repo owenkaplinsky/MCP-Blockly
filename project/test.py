@@ -323,10 +323,35 @@ def build_interface():
         def process_input(*args):
             result = execute_blockly_logic(args)
 
-            # If the result is a tuple or list, pad it to length 10
+            # Get output types to determine how to format the result
+            import re
+            out_types_match = re.search(r'out_types\s*=\s*(\[.*?\])', latest_blockly_code, re.DOTALL)
+            out_types = []
+            if out_types_match:
+                try:
+                    out_types = ast.literal_eval(out_types_match.group(1))
+                    # Convert Python type strings to display names
+                    out_types = [
+                        "string" if t == "str" else 
+                        "integer" if t == "int" else 
+                        "float" if t == "float" else 
+                        "list" if t == "list" else 
+                        "boolean" if t == "bool" else t 
+                        for t in out_types
+                    ]
+                except Exception:
+                    out_types = []
+
+            # If result is a tuple or list
             if isinstance(result, (tuple, list)):
-                return list(result) + [""] * (10 - len(result))
-            # If it's a single value, repeat it in the first slot and pad the rest
+                # Check if the first output type is "list" - if so, convert to string representation
+                if out_types and out_types[0] == "list":
+                    return [str(result)] + [""] * 9
+                else:
+                    # Multiple outputs - each item is a separate output
+                    return list(result) + [""] * (10 - len(result))
+            
+            # If it's a single value, put it in the first slot and pad the rest
             return [result] + [""] * 9
 
         # When refresh is clicked, update input field visibility and labels
