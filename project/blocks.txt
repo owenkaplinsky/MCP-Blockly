@@ -50,6 +50,7 @@ VALUE: lists_indexOf(inputs(END: "FIRST/LAST", VALUE: value, FIND: value))
 VALUE: lists_reverse(inputs(LIST: value))
 VALUE: lists_create_with(inputs(ADDN: value)) // N starts at 0; you can make as many N as you want
 VALUE: lists_sort(inputs(TYPE: "NUMERIC/TEXT/IGNORE_CASE", DIRECTION: "1/-1")) // For direction, 1 is ascending, -1 is descending
+VALUE: lists_contains(inputs(ITEM: value, LIST: value))
 
 # Variables
 VALUE: variables_get(inputs(VAR: value)) // VAR is a variable ID

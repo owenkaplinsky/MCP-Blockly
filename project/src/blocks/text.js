@@ -503,6 +503,7 @@ const container_input = {
         ["Integer", "integer"],
         ["Float", "float"],
         ["List", "list"],
+        ["Boolean", "boolean"],
       ]
     },
     { type: "field_input", name: "NAME" },
@@ -524,6 +525,7 @@ const container_output = {
         ["Integer", "integer"],
         ["Float", "float"],
         ["List", "list"],
+        ["Boolean", "boolean"],
       ]
     },
     { type: "field_input", name: "NAME" },
@@ -633,6 +635,20 @@ const make_json = {
   output: ["String", "Integer"],
   mutator: "json_mutator",
   fieldCount_: 1,
+};
+
+const lists_contains = {
+  type: "lists_contains",
+  message0: "item %1 in list %2",
+  args0: [
+    { type: "input_value", name: "ITEM", check: null },
+    { type: "input_value", name: "LIST", check: "Array" },
+  ],
+  output: "Boolean",
+  colour: 260,
+  inputsInline: true,
+  tooltip: "Check if an item exists in a list",
+  helpUrl: "",
 };
 
 // Dynamic function call block
@@ -1143,4 +1159,5 @@ export const blocks = Blockly.common.createBlockDefinitionsFromJsonArray([
   llm_call,
   call_api,
   in_json,
+  lists_contains,
 ]);

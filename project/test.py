@@ -155,7 +155,11 @@ def execute_blockly_logic(user_inputs):
                     elif anno == float:
                         typed_args.append(float(arg))
                     elif anno == bool:
-                        typed_args.append(str(arg).lower() in ("true", "1"))
+                        # Handle boolean conversion from string (checkbox in Gradio sends True/False)
+                        if isinstance(arg, bool):
+                            typed_args.append(arg)
+                        else:
+                            typed_args.append(str(arg).lower() in ("true", "1"))
                     elif anno == list:
                         try:
                             # Convert string like '["a", "b", "c"]' into an actual list
@@ -193,7 +197,7 @@ def execute_blockly_logic(user_inputs):
         print("[EXECUTION ERROR]", e)
         result = f"Error: {str(e)}"
 
-    return result if result else "No output generated"
+    return result if result is not None and result != "" else "No output generated"
 
 
 def build_interface():
@@ -279,12 +283,13 @@ def build_interface():
                     out_types = []
             else:
                 out_types = []
-            # Convert output types: handle string, integer, float, list
+            # Convert output types: handle string, integer, float, list, boolean
             out_types = [
                 "string" if t == "str" else 
                 "integer" if t == "int" else 
                 "float" if t == "float" else 
-                "list" if t == "list" else t 
+                "list" if t == "list" else 
+                "boolean" if t == "bool" else t 
                 for t in out_types
             ]
 

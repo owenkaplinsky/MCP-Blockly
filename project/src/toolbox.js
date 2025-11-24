@@ -518,6 +518,10 @@ export const toolbox = {
           kind: 'block',
           type: 'lists_reverse',
         },
+        {
+          kind: 'block',
+          type: 'lists_contains',
+        },
       ],
     },
     {

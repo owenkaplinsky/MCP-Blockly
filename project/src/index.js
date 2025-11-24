@@ -1274,12 +1274,10 @@ const updateCode = () => {
   const blocks = ws.getAllBlocks(false);
   const hasCall = blocks.some(block => block.type === 'llm_call');
   const hasAPI = blocks.some(block => block.type === 'call_api');
-  const hasListSort = code.includes('lists_sort(');
   const hasPrime = code.includes('math_isPrime(');
 
   if (hasCall) code = call + code;
   if (hasAPI) code = API + code;
-  if (hasListSort) code = listSort + code;
 
   if (hasPrime) {
     code = code.replace(/math_isPrime\(([^)]*)\)/g, 'isprime($1)');

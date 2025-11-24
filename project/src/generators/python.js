@@ -40,6 +40,9 @@ forBlock['create_mcp'] = function (block, generator) {
         case 'list':
           pyType = 'list';
           break;
+        case 'boolean':
+          pyType = 'bool';
+          break;
         default:
           pyType = 'Any';
       }
@@ -67,12 +70,14 @@ forBlock['create_mcp'] = function (block, generator) {
         }
       }
 
-      // Type-cast numeric returns to ensure proper Gradio compatibility
+      // Type-cast returns to ensure proper Gradio compatibility
       const outputType = block.outputTypes_[r] || 'string';
       if (outputType === 'integer' && returnValue) {
         returnValue = `int(${returnValue})`;
       } else if (outputType === 'float' && returnValue) {
         returnValue = `float(${returnValue})`;
+      } else if (outputType === 'boolean' && returnValue) {
+        returnValue = `bool(${returnValue})`;
       }
 
       returnValues.push(returnValue || 'None');
@@ -115,6 +120,9 @@ forBlock['create_mcp'] = function (block, generator) {
         case 'list':
           gradioInputs.push('gr.Dataframe()');
           break;
+        case 'boolean':
+          gradioInputs.push('gr.Checkbox()');
+          break;
         default:
           gradioInputs.push('gr.Textbox()');
       }
@@ -140,6 +148,9 @@ forBlock['create_mcp'] = function (block, generator) {
           break;
         case 'list':
           gradioOutputs.push('gr.Dataframe()');
+          break;
+        case 'boolean':
+          gradioOutputs.push('gr.Checkbox()');
           break;
         default:
           gradioOutputs.push('gr.Textbox()');
@@ -199,6 +210,9 @@ forBlock['func_def'] = function (block, generator) {
         case 'list':
           pyType = 'list';
           break;
+        case 'boolean':
+          pyType = 'bool';
+          break;
         default:
           pyType = 'Any';
       }
@@ -224,12 +238,14 @@ forBlock['func_def'] = function (block, generator) {
         }
       }
 
-      // Type-cast numeric returns to ensure proper Gradio compatibility
+      // Type-cast returns to ensure proper Gradio compatibility
       const outputType = block.outputTypes_[r] || 'string';
       if (outputType === 'integer' && returnValue) {
         returnValue = `int(${returnValue})`;
       } else if (outputType === 'float' && returnValue) {
         returnValue = `float(${returnValue})`;
+      } else if (outputType === 'boolean' && returnValue) {
+        returnValue = `bool(${returnValue})`;
       }
 
       returnValues.push(returnValue || 'None');
@@ -361,5 +377,14 @@ forBlock['make_json'] = function (block, generator) {
 
   // Generate valid Python dict syntax
   const code = pairs.length > 0 ? `{${pairs.join(', ')}}` : '{}';
+  return [code, Order.ATOMIC];
+};
+
+forBlock['lists_contains'] = function (block, generator) {
+  const item = generator.valueToCode(block, 'ITEM', Order.NONE) || "''";
+  const list = generator.valueToCode(block, 'LIST', Order.NONE) || "[]";
+
+  // Generate code to check if item is in list
+  const code = `${item} in ${list}`;
   return [code, Order.ATOMIC];
 };
