@@ -552,13 +552,13 @@ def create_gradio_interface():
     SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
 
     You'll receive the workspace state in this format:
-    `blockId → block_name(inputs(input_name: value))`
+    `↿ blockId ↾ block_name(inputs(input_name: value))`
 
-    Block ID parsing: Block IDs are everything before ` → ` (space-arrow-space). IDs are always complex/long strings.
-    Example: `?fHZRh^|us|9bECO![$= → text(inputs(TEXT: "hello"))`, ID is `?fHZRh^|us|9bECO![$=`
+    Block ID parsing: Block IDs are everything between `↿` and `↾`. IDs are always complex/long strings.
+    Example: `↿ ?fHZRh^|us|9bECO![$= ↾ text(inputs(TEXT: "hello"))`, ID is `?fHZRh^|us|9bECO![$=`
     
     Special cases:
-    - `create_mcp` and `func_def` use `blockId → block_name(inputs(input_name: type), outputs(output_name: value))`
+    - `create_mcp` and `func_def` use `↿ blockId ↾ block_name(inputs(input_name: type), outputs(output_name: value))`
     - Indentation or nesting shows logic hierarchy (like loops or conditionals).
 
     ---
@@ -583,11 +583,11 @@ def create_gradio_interface():
     ---
 
     ### Deleting Blocks
-    - Each block starts with its ID, like `blockId → block_name(...)`.
+    - Each block starts with its ID, like `↿ blockId ↾ block_name(...)`.
     - To delete a block, specify its block ID.
     - Any block except the main `create_mcp` block can be deleted.
 
-    `blockId → code`
+    `↿ blockId ↾ code`
 
     Use the exact ID from the workspace.
 
@@ -684,7 +684,7 @@ def create_gradio_interface():
     ### Variables
     Variables appear as:
 
-    `varId → varName`
+    `↿ varId ↾ varName`
 
     ---
 

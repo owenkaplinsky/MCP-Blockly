@@ -1239,7 +1239,7 @@ const updateCode = () => {
 
   // Variable map (unchanged)
   const vars = ws.getVariableMap().getAllVariables();
-  globalVarString = vars.map(v => `${v.id} → ${v.name}`).join("\n");
+  globalVarString = vars.map(v => `↿ ${v.id} ↾ ${v.name}`).join("\n");
 
   const codeEl = document.querySelector('#generatedCode code');
 

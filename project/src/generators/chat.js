@@ -70,8 +70,8 @@ forBlock['create_mcp'] = function (block, generator) {
   let body = generator.statementToCode(block, 'BODY');
 
   // Construct the create_mcp call with inputs and outputs
-  // Include block ID for deletion tracking with arrow separator
-  let code = `${block.id} → create_mcp(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))`
+  // Include block ID for deletion tracking with bounded separator
+  let code = `↿ ${block.id} ↾ create_mcp(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))`
 
   // Add the function body
   if (body) {
@@ -120,8 +120,8 @@ forBlock['func_def'] = function (block, generator) {
   let body = generator.statementToCode(block, 'BODY');
 
   // Construct the func_def call with inputs and outputs
-  // Include block ID for deletion tracking with arrow separator
-  let code = `${block.id} → ${name}(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))`
+  // Include block ID for deletion tracking with bounded separator
+  let code = `↿ ${block.id} ↾ ${name}(inputs(${inputParams.join(', ')}), outputs(${outputParams.join(', ')}))`
 
   // Add the function body
   if (body) {
@@ -257,7 +257,7 @@ chatGenerator.blockToCode = function (block, opt_thisOnly) {
       }
 
       // Generate the controls_if call with conditions
-      let code = `${block.id} → ${blockType}(inputs(${inputs.join(', ')}))`;
+      let code = `↿ ${block.id} ↾ ${blockType}(inputs(${inputs.join(', ')}))`;
 
       // Now get all the statement blocks with proper formatting
       // DO0, DO1, etc. are indented under the if
@@ -326,8 +326,8 @@ chatGenerator.blockToCode = function (block, opt_thisOnly) {
       }
     }
 
-    // Generate the standard format: name(inputs(...)) with block ID and arrow separator
-    const code = `${block.id} → ${blockType}(inputs(${inputs.join(', ')}))`;
+    // Generate the standard format: name(inputs(...)) with block ID and bounded separator
+    const code = `↿ ${block.id} ↾ ${blockType}(inputs(${inputs.join(', ')}))`;
 
     // Handle statement inputs (for blocks that have a body)
     let statements = '';
@@ -359,7 +359,7 @@ chatGenerator.blockToCode = function (block, opt_thisOnly) {
         return [valueCode, this.ORDER_ATOMIC];
       } else {
         // When standalone (not connected), include the ID
-        const standaloneCode = `${block.id} → ${blockType}(inputs(${inputs.join(', ')}))`;
+        const standaloneCode = `↿ ${block.id} ↾ ${blockType}(inputs(${inputs.join(', ')}))`;
         // For standalone value blocks, we need to return them as statement-like
         // but still maintain the value block return format for Blockly
         return [standaloneCode, this.ORDER_ATOMIC];
