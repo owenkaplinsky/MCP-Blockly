@@ -880,10 +880,11 @@ const setupUnifiedStream = () => {
 
         // Send result back to backend immediately
         console.log('[SSE] Sending edit MCP result:', { request_id: data.request_id, success, error });
-        fetch('/edit_mcp_result', {
+        fetch('/request_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            request_type: 'edit_mcp',
             request_id: data.request_id,
             success: success,
             error: error
@@ -973,10 +974,11 @@ const setupUnifiedStream = () => {
 
         // Send result back to backend
         console.log('[SSE] Sending replace block result:', { request_id: data.request_id, success, error, block_id: blockId });
-        fetch('/replace_block_result', {
+        fetch('/request_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            request_type: 'replace',
             request_id: data.request_id,
             success: success,
             error: error,
@@ -1020,10 +1022,11 @@ const setupUnifiedStream = () => {
 
         // Send result back to backend immediately
         console.log('[SSE] Sending deletion result:', { block_id: data.block_id, success, error });
-        fetch('/deletion_result', {
+        fetch('/request_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            request_type: 'delete',
             block_id: data.block_id,
             success: success,
             error: error
@@ -1212,10 +1215,11 @@ const setupUnifiedStream = () => {
           block_id: blockId
         });
 
-        fetch('/creation_result', {
+        fetch('/request_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            request_type: 'create',
             request_id: data.request_id,
             success: success,
             error: error,
@@ -1263,10 +1267,11 @@ const setupUnifiedStream = () => {
           variable_id: variableId
         });
 
-        fetch('/variable_result', {
+        fetch('/request_result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            request_type: 'variable',
             request_id: data.request_id,
             success: success,
             error: error,

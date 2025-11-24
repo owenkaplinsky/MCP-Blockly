@@ -27,25 +27,63 @@ latest_blockly_chat_code = ""
 # Global variable to store the workspace's variables
 latest_blockly_vars = ""
 
-# Queue for deletion requests and results storage
-deletion_queue = queue.Queue()
-deletion_results = {}
+# Unified queue for all block operation requests (Py -> JS)
+requests_queue = queue.Queue()
 
-# Queue for creation requests and results storage
-creation_queue = queue.Queue()
-creation_results = {}
+# Unified queue for all request results from frontend (JS -> Py)
+results_queue = queue.Queue()
 
-# Queue for variable creation requests and results storage
-variable_queue = queue.Queue()
-variable_results = {}
-
-# Queue for edit MCP requests and results storage
-edit_mcp_queue = queue.Queue()
-edit_mcp_results = {}
-
-# Queue for replace block requests and results storage
-replace_block_queue = queue.Queue()
-replace_block_results = {}
+# Helper function to wait for a result from the unified queue
+def wait_for_result(request_id, request_type, timeout=8, id_field='request_id'):
+    """
+    Wait for a result from the unified results_queue.
+    Matches results by request_id and request_type.
+    
+    Args:
+        request_id: Identifier for the request (UUID or block_id)
+        request_type: Type of request ('delete', 'create', 'variable', 'edit_mcp', 'replace')
+        timeout: Maximum time to wait in seconds
+        id_field: Field name to match against (default 'request_id', use 'block_id' for delete)
+        
+    Returns:
+        Result dict if found and successful, raises exception otherwise
+    """
+    start_time = time.time()
+    check_interval = 0.05
+    results_buffer = []  # Buffer for results we read but don't match
+    
+    while time.time() - start_time < timeout:
+        # Check if we have buffered results that match
+        for i, result in enumerate(results_buffer):
+            if (result.get(id_field) == request_id and 
+                result.get('request_type') == request_type):
+                results_buffer.pop(i)
+                return result
+        
+        # Try to get a new result from queue
+        try:
+            result = results_queue.get_nowait()
+            # Check if this is our result
+            if (result.get(id_field) == request_id and 
+                result.get('request_type') == request_type):
+                # Put back any buffered results we collected
+                for buffered in results_buffer:
+                    results_queue.put(buffered)
+                results_buffer = []
+                return result
+            else:
+                # Not our result, buffer it for other functions to find
+                results_buffer.append(result)
+        except queue.Empty:
+            pass
+        
+        time.sleep(check_interval)
+    
+    # Timeout - put back any buffered results
+    for buffered in results_buffer:
+        results_queue.put(buffered)
+    
+    raise TimeoutError(f"No response received for {request_type} request {request_id} after {timeout} seconds")
 
 # Global variable to store the deployed HF MCP server URL
 current_mcp_server_url = None
@@ -109,32 +147,22 @@ def delete_block(block_id):
     try:
         print(f"[DELETE REQUEST] Attempting to delete block: {block_id}")
         
-        # Clear any old results for this block ID first
-        if block_id in deletion_results:
-            deletion_results.pop(block_id)
-        
-        # Add to deletion queue
-        deletion_queue.put({"block_id": block_id})
+        # Add to unified requests queue
+        delete_data = {"type": "delete", "block_id": block_id}
+        requests_queue.put(delete_data)
         print(f"[DELETE REQUEST] Added to queue: {block_id}")
         
-        # Wait for result with timeout
-        import time
-        timeout = 8  # Increased timeout to 8 seconds
-        start_time = time.time()
-        check_interval = 0.05  # Check more frequently
-        
-        while time.time() - start_time < timeout:
-            if block_id in deletion_results:
-                result = deletion_results.pop(block_id)
-                print(f"[DELETE RESULT] Received result for {block_id}: success={result.get('success')}, error={result.get('error')}")
-                if result["success"]:
-                    return f"[TOOL] Successfully deleted block {block_id}"
-                else:
-                    return f"[TOOL] Failed to delete block {block_id}: {result.get('error', 'Unknown error')}"
-            time.sleep(check_interval)
-        
-        print(f"[DELETE TIMEOUT] No response received for block {block_id} after {timeout} seconds")
-        return f"Timeout waiting for deletion confirmation for block {block_id}"
+        # Wait for result from unified queue (delete uses 'block_id' as the identifier field)
+        try:
+            result = wait_for_result(block_id, "delete", timeout=8, id_field='block_id')
+            print(f"[DELETE RESULT] Received result for {block_id}: success={result.get('success')}, error={result.get('error')}")
+            if result["success"]:
+                return f"[TOOL] Successfully deleted block {block_id}"
+            else:
+                return f"[TOOL] Failed to delete block {block_id}: {result.get('error', 'Unknown error')}"
+        except TimeoutError as e:
+            print(f"[DELETE TIMEOUT] {e}")
+            return f"Timeout waiting for deletion confirmation for block {block_id}"
             
     except Exception as e:
         print(f"[DELETE ERROR] {e}")
@@ -145,41 +173,29 @@ def delete_block(block_id):
 def create_block(block_spec, blockID=None, placement_type=None, input_name=None):
     try:
         # Generate a unique request ID
-        import uuid
         request_id = str(uuid.uuid4())
         
-        # Clear any old results for this request ID first
-        if request_id in creation_results:
-            creation_results.pop(request_id)
-        
         # Add to creation queue with optional blockID, placement_type, and input_name
-        queue_data = {"request_id": request_id, "block_spec": block_spec}
+        queue_data = {"type": "create", "request_id": request_id, "block_spec": block_spec}
         if blockID:
             queue_data["blockID"] = blockID
         if placement_type:
             queue_data["placement_type"] = placement_type
         if input_name:
             queue_data["input_name"] = input_name
-        creation_queue.put(queue_data)
+        requests_queue.put(queue_data)
         
-        # Wait for result with timeout
-        import time
-        timeout = 8  # 8 seconds timeout
-        start_time = time.time()
-        check_interval = 0.05  # Check more frequently
-        
-        while time.time() - start_time < timeout:
-            if request_id in creation_results:
-                result = creation_results.pop(request_id)
-                if result["success"]:
-                    return f"[TOOL] Successfully created block: {result.get('block_id', 'unknown')}"
-                else:
-                    error_msg = result.get('error') or 'Unknown error'
-                    return f"[TOOL] Failed to create block: {error_msg}"
-            time.sleep(check_interval)
-        
-        print(f"[CREATE TIMEOUT] No response received for request {request_id} after {timeout} seconds")
-        return f"Timeout waiting for block creation confirmation"
+        # Wait for result from unified queue
+        try:
+            result = wait_for_result(request_id, "create", timeout=8)
+            if result["success"]:
+                return f"[TOOL] Successfully created block: {result.get('block_id', 'unknown')}"
+            else:
+                error_msg = result.get('error') or 'Unknown error'
+                return f"[TOOL] Failed to create block: {error_msg}"
+        except TimeoutError as e:
+            print(f"[CREATE TIMEOUT] {e}")
+            return f"Timeout waiting for block creation confirmation"
             
     except Exception as e:
         print(f"[CREATE ERROR] {e}")
@@ -194,32 +210,22 @@ def create_variable(var_name):
         # Generate a unique request ID
         request_id = str(uuid.uuid4())
         
-        # Clear any old results for this request ID first
-        if request_id in variable_results:
-            variable_results.pop(request_id)
-        
         # Add to variable creation queue
-        queue_data = {"request_id": request_id, "variable_name": var_name}
-        variable_queue.put(queue_data)
+        queue_data = {"type": "variable", "request_id": request_id, "variable_name": var_name}
+        requests_queue.put(queue_data)
         print(f"[VARIABLE REQUEST] Added to queue with ID: {request_id}")
         
-        # Wait for result with timeout
-        timeout = 8  # 8 seconds timeout
-        start_time = time.time()
-        check_interval = 0.05  # Check more frequently
-        
-        while time.time() - start_time < timeout:
-            if request_id in variable_results:
-                result = variable_results.pop(request_id)
-                print(f"[VARIABLE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
-                if result["success"]:
-                    return f"[TOOL] Successfully created variable: {result.get('variable_id', var_name)}"
-                else:
-                    return f"[TOOL] Failed to create variable: {result.get('error', 'Unknown error')}"
-            time.sleep(check_interval)
-        
-        print(f"[VARIABLE TIMEOUT] No response received for request {request_id} after {timeout} seconds")
-        return f"Timeout waiting for variable creation confirmation"
+        # Wait for result from unified queue
+        try:
+            result = wait_for_result(request_id, "variable", timeout=8)
+            print(f"[VARIABLE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
+            if result["success"]:
+                return f"[TOOL] Successfully created variable: {result.get('variable_id', var_name)}"
+            else:
+                return f"[TOOL] Failed to create variable: {result.get('error', 'Unknown error')}"
+        except TimeoutError as e:
+            print(f"[VARIABLE TIMEOUT] {e}")
+            return f"Timeout waiting for variable creation confirmation"
             
     except Exception as e:
         print(f"[VARIABLE ERROR] {e}")
@@ -234,38 +240,28 @@ def edit_mcp(inputs=None, outputs=None):
         # Generate a unique request ID
         request_id = str(uuid.uuid4())
         
-        # Clear any old results for this request ID first
-        if request_id in edit_mcp_results:
-            edit_mcp_results.pop(request_id)
-        
         # Build the edit data
-        edit_data = {"request_id": request_id}
+        edit_data = {"type": "edit_mcp", "request_id": request_id}
         if inputs is not None:
             edit_data["inputs"] = inputs
         if outputs is not None:
             edit_data["outputs"] = outputs
         
         # Add to edit MCP queue
-        edit_mcp_queue.put(edit_data)
+        requests_queue.put(edit_data)
         print(f"[EDIT MCP REQUEST] Added to queue with ID: {request_id}")
         
-        # Wait for result with timeout
-        timeout = 8  # 8 seconds timeout
-        start_time = time.time()
-        check_interval = 0.05  # Check more frequently
-        
-        while time.time() - start_time < timeout:
-            if request_id in edit_mcp_results:
-                result = edit_mcp_results.pop(request_id)
-                print(f"[EDIT MCP RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
-                if result["success"]:
-                    return f"[TOOL] Successfully edited MCP block inputs/outputs"
-                else:
-                    return f"[TOOL] Failed to edit MCP block: {result.get('error', 'Unknown error')}"
-            time.sleep(check_interval)
-        
-        print(f"[EDIT MCP TIMEOUT] No response received for request {request_id} after {timeout} seconds")
-        return f"Timeout waiting for MCP edit confirmation"
+        # Wait for result from unified queue
+        try:
+            result = wait_for_result(request_id, "edit_mcp", timeout=8)
+            print(f"[EDIT MCP RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
+            if result["success"]:
+                return f"[TOOL] Successfully edited MCP block inputs/outputs"
+            else:
+                return f"[TOOL] Failed to edit MCP block: {result.get('error', 'Unknown error')}"
+        except TimeoutError as e:
+            print(f"[EDIT MCP TIMEOUT] {e}")
+            return f"Timeout waiting for MCP edit confirmation"
             
     except Exception as e:
         print(f"[EDIT MCP ERROR] {e}")
@@ -280,34 +276,24 @@ def replace_block(block_id, command):
         # Generate a unique request ID
         request_id = str(uuid.uuid4())
         
-        # Clear any old results for this request ID first
-        if request_id in replace_block_results:
-            replace_block_results.pop(request_id)
-        
         # Build the replace data
-        replace_data = {"request_id": request_id, "block_id": block_id, "block_spec": command}
+        replace_data = {"type": "replace", "request_id": request_id, "block_id": block_id, "block_spec": command}
         
         # Add to replace block queue
-        replace_block_queue.put(replace_data)
+        requests_queue.put(replace_data)
         print(f"[REPLACE REQUEST] Added to queue with ID: {request_id}")
         
-        # Wait for result with timeout
-        timeout = 8  # 8 seconds timeout
-        start_time = time.time()
-        check_interval = 0.05  # Check more frequently
-        
-        while time.time() - start_time < timeout:
-            if request_id in replace_block_results:
-                result = replace_block_results.pop(request_id)
-                print(f"[REPLACE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
-                if result["success"]:
-                    return f"[TOOL] Successfully replaced block {block_id}"
-                else:
-                    return f"[TOOL] Failed to replace block: {result.get('error', 'Unknown error')}"
-            time.sleep(check_interval)
-        
-        print(f"[REPLACE TIMEOUT] No response received for request {request_id} after {timeout} seconds")
-        return f"Timeout waiting for block replacement confirmation"
+        # Wait for result from unified queue
+        try:
+            result = wait_for_result(request_id, "replace", timeout=8)
+            print(f"[REPLACE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
+            if result["success"]:
+                return f"[TOOL] Successfully replaced block {block_id}"
+            else:
+                return f"[TOOL] Failed to replace block: {result.get('error', 'Unknown error')}"
+        except TimeoutError as e:
+            print(f"[REPLACE TIMEOUT] {e}")
+            return f"Timeout waiting for block replacement confirmation"
             
     except Exception as e:
         print(f"[REPLACE ERROR] {e}")
@@ -330,90 +316,26 @@ async def unified_stream():
         
         while True:
             try:
-                # Check deletion queue
-                if not deletion_queue.empty():
-                    deletion_request = deletion_queue.get_nowait()
-                    block_id = deletion_request.get("block_id")
-                    request_key = f"delete_{block_id}"
+                # Check unified requests queue (no elif - checks every iteration)
+                if not requests_queue.empty():
+                    request = requests_queue.get_nowait()
+                    request_type = request.get("type")
+                    
+                    # Build request key for duplicate detection
+                    if request_type == "delete":
+                        request_key = f"delete_{request.get('block_id')}"
+                    else:
+                        request_key = f"{request_type}_{request.get('request_id')}"
                     
                     # Avoid sending duplicate requests too quickly
                     if request_key not in sent_requests:
                         sent_requests.add(request_key)
-                        deletion_request["type"] = "delete"  # Add type identifier
-                        yield f"data: {json.dumps(deletion_request)}\n\n"
+                        yield f"data: {json.dumps(request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
                         asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
                     else:
-                        print(f"[SSE SKIP] Skipping duplicate request for block: {block_id}")
-                
-                # Check creation queue
-                elif not creation_queue.empty():
-                    creation_request = creation_queue.get_nowait()
-                    request_id = creation_request.get("request_id")
-                    request_key = f"create_{request_id}"
-                    
-                    # Avoid sending duplicate requests too quickly
-                    if request_key not in sent_requests:
-                        sent_requests.add(request_key)
-                        creation_request["type"] = "create"  # Add type identifier
-                        yield f"data: {json.dumps(creation_request)}\n\n"
-                        
-                        # Clear from sent_requests after 10 seconds
-                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
-                    else:
-                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
-                
-                # Check variable queue
-                elif not variable_queue.empty():
-                    variable_request = variable_queue.get_nowait()
-                    request_id = variable_request.get("request_id")
-                    request_key = f"variable_{request_id}"
-                    
-                    # Avoid sending duplicate requests too quickly
-                    if request_key not in sent_requests:
-                        sent_requests.add(request_key)
-                        variable_request["type"] = "variable"  # Add type identifier
-                        yield f"data: {json.dumps(variable_request)}\n\n"
-                        
-                        # Clear from sent_requests after 10 seconds
-                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
-                    else:
-                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
-                
-                # Check edit MCP queue
-                elif not edit_mcp_queue.empty():
-                    edit_request = edit_mcp_queue.get_nowait()
-                    request_id = edit_request.get("request_id")
-                    request_key = f"edit_mcp_{request_id}"
-                    
-                    # Avoid sending duplicate requests too quickly
-                    if request_key not in sent_requests:
-                        sent_requests.add(request_key)
-                        edit_request["type"] = "edit_mcp"  # Add type identifier
-                        yield f"data: {json.dumps(edit_request)}\n\n"
-                        
-                        # Clear from sent_requests after 10 seconds
-                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
-                    else:
-                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
-                
-                # Check replace block queue
-                elif not replace_block_queue.empty():
-                    replace_request = replace_block_queue.get_nowait()
-                    request_id = replace_request.get("request_id")
-                    request_key = f"replace_{request_id}"
-                    
-                    # Avoid sending duplicate requests too quickly
-                    if request_key not in sent_requests:
-                        sent_requests.add(request_key)
-                        replace_request["type"] = "replace"  # Add type identifier
-                        yield f"data: {json.dumps(replace_request)}\n\n"
-                        
-                        # Clear from sent_requests after 10 seconds
-                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
-                    else:
-                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
+                        print(f"[SSE SKIP] Skipping duplicate request: {request_key}")
                 
                 else:
                     # Send a heartbeat every 30 seconds to keep connection alive
@@ -439,80 +361,61 @@ async def unified_stream():
         }
     )
 
-# Endpoint to receive creation results from frontend
-@app.post("/creation_result")
-async def creation_result(request: Request):
-    data = await request.json()
-    request_id = data.get("request_id")
- 
-    if request_id:
-        # Store the result for the create_block function to retrieve
-        creation_results[request_id] = data
+# Unified Server-Sent Events endpoint for all results from frontend
+@app.get("/results_stream")
+async def results_stream():
+    async def event_generator():
+        while True:
+            try:
+                # Check if there are any results to send
+                if not results_queue.empty():
+                    result_data = results_queue.get_nowait()
+                    yield f"data: {json.dumps(result_data)}\n\n"
+                else:
+                    # Send a heartbeat every 30 seconds to keep connection alive
+                    await asyncio.sleep(0.1)
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"[RESULTS SSE ERROR] {e}")
+                await asyncio.sleep(1)
     
-    return {"received": True}
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
-# Endpoint to receive deletion results from frontend
-@app.post("/deletion_result")
-async def deletion_result(request: Request):
+# Unified endpoint to receive all results from frontend
+@app.post("/request_result")
+async def request_result(request: Request):
     data = await request.json()
-    block_id = data.get("block_id")
-    success = data.get("success")
-    error = data.get("error")
+    request_type = data.get("request_type")
     
-    print(f"[DELETION RESULT RECEIVED] block_id={block_id}, success={success}, error={error}")
+    # Log based on type
+    if request_type == "delete":
+        block_id = data.get("block_id")
+        success = data.get("success")
+        error = data.get("error")
+        print(f"[RESULT RECEIVED] type={request_type}, block_id={block_id}, success={success}, error={error}")
+    elif request_type == "variable":
+        request_id = data.get("request_id")
+        variable_id = data.get("variable_id")
+        success = data.get("success")
+        error = data.get("error")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}, variable_id={variable_id}")
+    elif request_type in ("create", "replace", "edit_mcp"):
+        request_id = data.get("request_id")
+        success = data.get("success")
+        error = data.get("error")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}")
     
-    if block_id:
-        # Store the result for the delete_block function to retrieve
-        deletion_results[block_id] = data
-        print(f"[DELETION RESULT STORED] Results dict now has {len(deletion_results)} items")
-    
-    return {"received": True}
-
-# Endpoint to receive variable creation results from frontend
-@app.post("/variable_result")
-async def variable_result(request: Request):
-    data = await request.json()
-    request_id = data.get("request_id")
-    success = data.get("success")
-    error = data.get("error")
-    variable_id = data.get("variable_id")
-    
-    print(f"[VARIABLE RESULT RECEIVED] request_id={request_id}, success={success}, error={error}, variable_id={variable_id}")
-    
-    if request_id:
-        # Store the result for the create_variable function to retrieve
-        variable_results[request_id] = data
-        print(f"[VARIABLE RESULT STORED] Results dict now has {len(variable_results)} items")
-    
-    return {"received": True}
-
-# Endpoint to receive edit MCP results from frontend
-@app.post("/edit_mcp_result")
-async def edit_mcp_result(request: Request):
-    data = await request.json()
-    request_id = data.get("request_id")
-    success = data.get("success")
-    error = data.get("error")
-    
-    if request_id:
-        # Store the result for the edit_mcp function to retrieve
-        edit_mcp_results[request_id] = data
-    
-    return {"received": True}
-
-# Endpoint to receive replace block results from frontend
-@app.post("/replace_block_result")
-async def replace_block_result(request: Request):
-    data = await request.json()
-    request_id = data.get("request_id")
-    success = data.get("success")
-    error = data.get("error")
-    
-    print(f"[REPLACE RESULT RECEIVED] request_id={request_id}, success={success}, error={error}")
-    
-    if request_id:
-        # Store the result for the replace_block function to retrieve
-        replace_block_results[request_id] = data
+    # Put directly in unified results queue
+    results_queue.put(data)
     
     return {"received": True}
 
