@@ -1212,38 +1212,38 @@ const observer = new ResizeObserver(() => {
 observer.observe(blocklyDiv);
 
 const updateCode = () => {
-  // Initialize the Python generator with the workspace before generating code
-  // This ensures the Names database is properly set up for control flow blocks
-  pythonGenerator.init(ws);
+  // 1) Create isolated temporary workspace
+  const tempWs = new Blockly.Workspace();
 
-  // Instead of using workspaceToCode which processes ALL blocks,
-  // manually process only blocks connected to create_mcp or func_def
-  let code = '';
-
-  // Get all top-level blocks (not connected to other blocks)
+  // 2) Copy only allowed root blocks into the temp workspace
   const topBlocks = ws.getTopBlocks(false);
-
-  // Process only create_mcp and func_def blocks
   for (const block of topBlocks) {
     if (block.type === 'create_mcp' || block.type === 'func_def') {
-      // Generate code for this block and its connected blocks
-      const blockCode = pythonGenerator.blockToCode(block);
-      if (blockCode) {
-        if (Array.isArray(blockCode)) {
-          code += blockCode[0] + '\n';
-        } else {
-          code += blockCode + '\n';
-        }
-      }
+      Blockly.serialization.blocks.append(
+        Blockly.serialization.blocks.save(block),
+        tempWs
+      );
     }
-    // Ignore any other top-level blocks (stray blocks)
   }
 
+  // 3) Generate code from the clean workspace
+  let code = pythonGenerator.workspaceToCode(tempWs);
+
+  // 4) Prepend helper functions collected during generation
+  const defs = pythonGenerator.definitions_
+    ? Object.values(pythonGenerator.definitions_)
+    : [];
+  if (defs.length) {
+    code = defs.join('\n') + '\n\n' + code;
+  }
+
+  // Variable map (unchanged)
   const vars = ws.getVariableMap().getAllVariables();
   globalVarString = vars.map(v => `${v.id} → ${v.name}`).join("\n");
 
   const codeEl = document.querySelector('#generatedCode code');
 
+  // Your custom helpers
   const call = `def llm_call(prompt, model):
   from openai import OpenAI
   import os
@@ -1274,47 +1274,31 @@ const updateCode = () => {
   const blocks = ws.getAllBlocks(false);
   const hasCall = blocks.some(block => block.type === 'llm_call');
   const hasAPI = blocks.some(block => block.type === 'call_api');
+  const hasListSort = code.includes('lists_sort(');
   const hasPrime = code.includes('math_isPrime(');
-  const hasNumberCheck = code.includes('isinstance(') && code.includes(', Number)');
 
-  if (hasCall) {
-    code = call + code;
-  }
+  if (hasCall) code = call + code;
+  if (hasAPI) code = API + code;
+  if (hasListSort) code = listSort + code;
 
-  if (hasAPI) {
-    code = API + code;
-  }
-
-  // Replace math_isPrime(...) with isprime(...) and add sympy import
   if (hasPrime) {
     code = code.replace(/math_isPrime\(([^)]*)\)/g, 'isprime($1)');
     code = "from sympy import isprime\n\n" + code;
   }
 
-  // Replace Number with numbers.Number and add numbers import
-  if (hasNumberCheck) {
-    code = code.replace(/isinstance\(([^,]+),\s*Number\)/g, 'isinstance($1, numbers_import.Number)');
-    code = "import numbers as numbers_import\n\n" + code;
-  }
-
-  code = "import gradio as gr\nimport math\n\n" + code
+  code = "import gradio as gr\nimport math\n\n" + code;
 
   if (codeEl) {
     codeEl.textContent = code;
   }
 
-  // Send generated Python code to backend
   fetch("/update_code", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
-  })
-    .then(() => {
-      console.log("[Blockly] Sent updated Python code to backend");
-    })
-    .catch((err) => {
-      console.error("[Blockly] Error sending Python code:", err);
-    });
+  }).catch((err) => {
+    console.error("[Blockly] Error sending Python code:", err);
+  });
 };
 
 // Track if chat backend is available
