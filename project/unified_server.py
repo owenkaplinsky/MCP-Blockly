@@ -38,22 +38,6 @@ async def set_api_key_chat_route(request: Request):
 async def unified_stream_route():
     return await chat.unified_stream()
 
-@app.post("/creation_result")
-async def creation_result_route(request: Request):
-    return await chat.creation_result(request)
-
-@app.post("/deletion_result")
-async def deletion_result_route(request: Request):
-    return await chat.deletion_result(request)
-
-@app.post("/variable_result")
-async def variable_result_route(request: Request):
-    return await chat.variable_result(request)
-
-@app.post("/edit_mcp_result")
-async def edit_mcp_result_route(request: Request):
-    return await chat.edit_mcp_result(request)
-
 @app.post("/request_result")
 async def request_result_route(request: Request):
     return await chat.request_result(request)

@@ -911,12 +911,11 @@ const setupUnifiedStream = () => {
             throw new Error(`Block ${data.block_id} not found`);
           }
 
-          // Store the parent and connection info before deletion
+          // Store connection info before creating new block
           const parentBlock = blockToReplace.getParent();
           const previousBlock = blockToReplace.getPreviousBlock();
           const nextBlock = blockToReplace.getNextBlock();
           let parentConnection = null;
-          let connectionType = null;
           let inputName = null;
 
           // Check if this block is connected to a parent's input
@@ -934,6 +933,23 @@ const setupUnifiedStream = () => {
                 inputName = input.name;
                 break;
               }
+            }
+          }
+
+          // Preserve only statement/next blocks (the body), not input field values
+          const statementBlocks = {};
+          const oldInputList = blockToReplace.inputList;
+          
+          for (const input of oldInputList) {
+            // Only preserve STATEMENT type inputs (like BODY, SUBSTACK, etc) - these are the internal structure
+            // Skip VALUE inputs and other types that might contain data values
+            if (input.type === Blockly.NEXT_STATEMENT && input.connection && input.connection.targetBlock()) {
+              const childBlock = input.connection.targetBlock();
+              statementBlocks[input.name] = {
+                block: childBlock,
+                connection: input.connection
+              };
+              console.log('[SSE] Found statement input to preserve:', input.name);
             }
           }
 
@@ -958,8 +974,31 @@ const setupUnifiedStream = () => {
             newBlock.nextConnection.connect(nextBlock.previousConnection);
           }
 
-          // Dispose the old block
-          blockToReplace.dispose(true);
+          // Transfer only statement blocks (body/internal structure) to matching inputs on new block
+          console.log('[SSE] Transferring', Object.keys(statementBlocks).length, 'statement blocks to new block');
+          for (const [oldInputName, blockInfo] of Object.entries(statementBlocks)) {
+            const newInput = newBlock.getInput(oldInputName);
+            if (newInput && newInput.connection && newInput.type === Blockly.NEXT_STATEMENT) {
+              console.log('[SSE] Transferring statement input:', oldInputName);
+              // Disconnect from old parent
+              blockInfo.block.unplug(false); // false = don't dispose children
+              // Connect to new parent
+              if (newInput.connection.targetBlock()) {
+                // Input already has something connected, skip
+                console.log('[SSE] Input', oldInputName, 'already has children, skipping');
+              } else {
+                newInput.connection.connect(blockInfo.block.previousConnection);
+              }
+            } else {
+              console.log('[SSE] New block does not have matching STATEMENT input:', oldInputName);
+              // Disconnect the child block from the old parent but leave it orphaned
+              // (it will appear as a separate block in the workspace)
+              blockInfo.block.unplug(false);
+            }
+          }
+
+          // Dispose only the old block itself, not its children (dispose(false))
+          blockToReplace.dispose(false);
 
           // Render the workspace
           ws.render();

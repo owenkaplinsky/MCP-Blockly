@@ -659,7 +659,10 @@ def create_gradio_interface():
     - WRONG: `math_arithmetic(inputs(A: 5, B: "hi"))`
     - RIGHT: `math_arithmetic(inputs(A: math_number(inputs(NUM: 5)), B: text(inputs(TEXT: "hi"))))`
 
-    You may NEVER create functions. You must only use code inside the MCP block itself.
+    ---
+
+    If you need to make a minor modification (e.g. change the amount of times a loop repeats, add an else if to an if) DO NOT delete the block and create a new one. ALWAYS use the replace tool instead.
+    It preserves everything you don't want to change - NEVER delete it if you don't absolutely have to, try to replace instead.
 
     ---
 
@@ -1245,7 +1248,6 @@ def create_gradio_interface():
     # Attach to Gradio ChatInterface
     demo = gr.ChatInterface(
         fn=chat_with_context,
-        title="AI Assistant",
     )
 
     return demo
