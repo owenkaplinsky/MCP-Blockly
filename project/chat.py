@@ -43,6 +43,10 @@ variable_results = {}
 edit_mcp_queue = queue.Queue()
 edit_mcp_results = {}
 
+# Queue for replace block requests and results storage
+replace_block_queue = queue.Queue()
+replace_block_results = {}
+
 # Global variable to store the deployed HF MCP server URL
 current_mcp_server_url = None
 
@@ -269,6 +273,48 @@ def edit_mcp(inputs=None, outputs=None):
         traceback.print_exc()
         return f"Error editing MCP block: {str(e)}"
 
+def replace_block(block_id, command):
+    try:
+        print(f"[REPLACE REQUEST] Attempting to replace block {block_id} with: {command}")
+        
+        # Generate a unique request ID
+        request_id = str(uuid.uuid4())
+        
+        # Clear any old results for this request ID first
+        if request_id in replace_block_results:
+            replace_block_results.pop(request_id)
+        
+        # Build the replace data
+        replace_data = {"request_id": request_id, "block_id": block_id, "block_spec": command}
+        
+        # Add to replace block queue
+        replace_block_queue.put(replace_data)
+        print(f"[REPLACE REQUEST] Added to queue with ID: {request_id}")
+        
+        # Wait for result with timeout
+        timeout = 8  # 8 seconds timeout
+        start_time = time.time()
+        check_interval = 0.05  # Check more frequently
+        
+        while time.time() - start_time < timeout:
+            if request_id in replace_block_results:
+                result = replace_block_results.pop(request_id)
+                print(f"[REPLACE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
+                if result["success"]:
+                    return f"[TOOL] Successfully replaced block {block_id}"
+                else:
+                    return f"[TOOL] Failed to replace block: {result.get('error', 'Unknown error')}"
+            time.sleep(check_interval)
+        
+        print(f"[REPLACE TIMEOUT] No response received for request {request_id} after {timeout} seconds")
+        return f"Timeout waiting for block replacement confirmation"
+            
+    except Exception as e:
+        print(f"[REPLACE ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error replacing block: {str(e)}"
+
 # Unified Server-Sent Events endpoint for all workspace operations
 @app.get("/unified_stream")
 async def unified_stream():
@@ -346,6 +392,23 @@ async def unified_stream():
                         sent_requests.add(request_key)
                         edit_request["type"] = "edit_mcp"  # Add type identifier
                         yield f"data: {json.dumps(edit_request)}\n\n"
+                        
+                        # Clear from sent_requests after 10 seconds
+                        asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
+                    else:
+                        print(f"[SSE SKIP] Skipping duplicate request for ID: {request_id}")
+                
+                # Check replace block queue
+                elif not replace_block_queue.empty():
+                    replace_request = replace_block_queue.get_nowait()
+                    request_id = replace_request.get("request_id")
+                    request_key = f"replace_{request_id}"
+                    
+                    # Avoid sending duplicate requests too quickly
+                    if request_key not in sent_requests:
+                        sent_requests.add(request_key)
+                        replace_request["type"] = "replace"  # Add type identifier
+                        yield f"data: {json.dumps(replace_request)}\n\n"
                         
                         # Clear from sent_requests after 10 seconds
                         asyncio.create_task(clear_sent_request(sent_requests, request_key, 10))
@@ -434,6 +497,22 @@ async def edit_mcp_result(request: Request):
     if request_id:
         # Store the result for the edit_mcp function to retrieve
         edit_mcp_results[request_id] = data
+    
+    return {"received": True}
+
+# Endpoint to receive replace block results from frontend
+@app.post("/replace_block_result")
+async def replace_block_result(request: Request):
+    data = await request.json()
+    request_id = data.get("request_id")
+    success = data.get("success")
+    error = data.get("error")
+    
+    print(f"[REPLACE RESULT RECEIVED] request_id={request_id}, success={success}, error={error}")
+    
+    if request_id:
+        # Store the result for the replace_block function to retrieve
+        replace_block_results[request_id] = data
     
     return {"received": True}
 
@@ -890,6 +969,25 @@ def create_gradio_interface():
         },
         {
             "type": "function",
+            "name": "replace_block",
+            "description": "Replace a block with a new block in the exact same location. The new block will take the place of the old one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "block_id": {
+                        "type": "string",
+                        "description": "The ID of the block you want to replace.",
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "The create block command using the custom DSL format for the new block. You must rewrite it ENTIRELY from scratch.",
+                    },
+                },
+                "required": ["block_id", "command"],
+            }
+        },
+        {
+            "type": "function",
             "name": "deploy_to_huggingface",
             "description": "Deploy the generated MCP tool to a Hugging Face Space. Requires a Hugging Face API key to be set.",
             "parameters": {
@@ -1081,14 +1179,6 @@ def create_gradio_interface():
                         tool_result = None
                         result_label = ""
                         
-                        # Log MCP tool calls
-                        if function_name not in ("delete_block", "create_block", "create_variable", "edit_mcp", "deploy_to_huggingface"):
-                            # This is an MCP tool call
-                            print(Fore.GREEN + f"[MCP TOOL CALL] Running MCP with inputs:" + Style.RESET_ALL)
-                            print(Fore.GREEN + f"  Tool name: {function_name}" + Style.RESET_ALL)
-                            for key, value in function_args.items():
-                                print(Fore.GREEN + f"  {key}: {value}" + Style.RESET_ALL)
-                        
                         if function_name == "delete_block":
                             block_id = function_args.get("id", "")
                             print(Fore.YELLOW + f"Agent deleted block with ID `{block_id}`." + Style.RESET_ALL)
@@ -1192,6 +1282,13 @@ def create_gradio_interface():
                             print(Fore.YELLOW + f"Agent editing MCP block: inputs={inputs}, outputs={outputs}." + Style.RESET_ALL)
                             tool_result = edit_mcp(inputs, outputs)
                             result_label = "Edit MCP Operation"
+                        
+                        elif function_name == "replace_block":
+                            block_id = function_args.get("block_id", "")
+                            command = function_args.get("command", "")
+                            print(Fore.YELLOW + f"Agent replacing block with ID `{block_id}` with command `{command}`." + Style.RESET_ALL)
+                            tool_result = replace_block(block_id, command)
+                            result_label = "Replace Block Operation"
                         
                         elif function_name == "deploy_to_huggingface":
                             space_name = function_args.get("space_name", "")

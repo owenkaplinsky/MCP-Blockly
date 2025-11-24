@@ -223,6 +223,557 @@ cleanWorkspace.addEventListener("click", () => {
   ws.cleanUp();
 });
 
+function parseAndCreateBlock(spec, shouldPosition = false, placementType = null, placementBlockID = null) {
+  // Match block_name(inputs(...)) with proper parenthesis matching
+  const blockMatch = spec.match(/^(\w+)\s*\((.*)$/s);
+
+  if (!blockMatch) {
+    throw new Error(`Invalid block specification format: ${spec}`);
+  }
+
+  const blockType = blockMatch[1];
+  let content = blockMatch[2].trim();
+
+  // We need to find the matching closing parenthesis for blockType(
+  // Count from the beginning and find where the matching ) is
+  let parenCount = 1; // We already have the opening (
+  let matchIndex = -1;
+  let inQuotes = false;
+  let quoteChar = '';
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+
+    // Handle quotes
+    if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {
+      if (!inQuotes) {
+        inQuotes = true;
+        quoteChar = char;
+      } else if (char === quoteChar) {
+        inQuotes = false;
+      }
+    }
+
+    // Only count parens outside quotes
+    if (!inQuotes) {
+      if (char === '(') parenCount++;
+      else if (char === ')') {
+        parenCount--;
+        if (parenCount === 0) {
+          matchIndex = i;
+          break;
+        }
+      }
+    }
+  }
+
+  // Extract content up to the matching closing paren
+  if (matchIndex >= 0) {
+    content = content.slice(0, matchIndex).trim();
+  } else {
+    // Fallback: remove last paren if present
+    if (content.endsWith(')')) {
+      content = content.slice(0, -1).trim();
+    }
+  }
+
+  console.log('[SSE CREATE] Parsing block:', blockType, 'with content:', content);
+
+  // Check if this has inputs() wrapper
+  let inputsContent = content;
+  if (content.startsWith('inputs(')) {
+    // Find the matching closing parenthesis for inputs(
+    parenCount = 1;
+    matchIndex = -1;
+    inQuotes = false;
+    quoteChar = '';
+
+    for (let i = 7; i < content.length; i++) { // Start after 'inputs('
+      const char = content[i];
+
+      // Handle quotes
+      if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {
+        if (!inQuotes) {
+          inQuotes = true;
+          quoteChar = char;
+        } else if (char === quoteChar) {
+          inQuotes = false;
+        }
+      }
+
+      // Only count parens outside quotes
+      if (!inQuotes) {
+        if (char === '(') parenCount++;
+        else if (char === ')') {
+          parenCount--;
+          if (parenCount === 0) {
+            matchIndex = i;
+            break;
+          }
+        }
+      }
+    }
+
+    // Extract content between inputs( and its matching )
+    if (matchIndex >= 0) {
+      inputsContent = content.slice(7, matchIndex);
+    } else {
+      // Fallback: remove inputs( and last )
+      if (content.endsWith(')')) {
+        inputsContent = content.slice(7, -1);
+      } else {
+        inputsContent = content.slice(7);
+      }
+    }
+  }
+
+  console.log('[SSE CREATE] inputsContent to parse:', inputsContent);
+
+  // VALIDATION: Check if trying to place a value block under a statement block
+  // Value blocks have an output connection but no previous connection
+  if (placementType === 'under') {
+    // Check if this block type is a value block by temporarily creating it
+    const testBlock = ws.newBlock(blockType);
+    const isValueBlock = testBlock.outputConnection && !testBlock.previousConnection;
+    testBlock.dispose(true); // Remove the test block
+
+    if (isValueBlock) {
+      throw new Error(`Cannot place value block '${blockType}' under a statement block. Value blocks must be nested inside inputs of other blocks or placed in MCP outputs using type: "input". Try creating a variable and assigning the value to that.`);
+    }
+  }
+
+  // Create the block
+  const newBlock = ws.newBlock(blockType);
+
+  if (inputsContent) {
+    // Parse the inputs content
+    console.log('[SSE CREATE] About to call parseInputs with:', inputsContent);
+    const inputs = parseInputs(inputsContent);
+    console.log('[SSE CREATE] Parsed inputs:', inputs);
+
+    // Special handling for make_json block
+    if (blockType === 'make_json') {
+      // Count FIELD entries to determine how many fields we need
+      let fieldCount = 0;
+      const fieldValues = {};
+      const keyValues = {};
+
+      for (const [key, value] of Object.entries(inputs)) {
+        const fieldMatch = key.match(/^FIELD(\d+)$/);
+        const keyMatch = key.match(/^KEY(\d+)$/);
+
+        if (fieldMatch) {
+          const index = parseInt(fieldMatch[1]);
+          fieldCount = Math.max(fieldCount, index + 1);
+          fieldValues[index] = value;
+        } else if (keyMatch) {
+          const index = parseInt(keyMatch[1]);
+          keyValues[index] = value;
+        }
+      }
+
+      // Set up the mutator state
+      if (fieldCount > 0) {
+        newBlock.fieldCount_ = fieldCount;
+        newBlock.fieldKeys_ = [];
+
+        // Create the inputs through the mutator
+        for (let i = 0; i < fieldCount; i++) {
+          const keyValue = keyValues[i];
+          const key = (typeof keyValue === 'string' && !keyValue.match(/^\w+\s*\(inputs\(/))
+            ? keyValue.replace(/^["']|["']$/g, '')
+            : `key${i}`;
+
+          newBlock.fieldKeys_[i] = key;
+
+          // Create the input
+          const input = newBlock.appendValueInput('FIELD' + i);
+          const field = new Blockly.FieldTextInput(key);
+          field.setValidator((newValue) => {
+            newBlock.fieldKeys_[i] = newValue || `key${i}`;
+            return newValue;
+          });
+          input.appendField(field, 'KEY' + i);
+          input.appendField(':');
+        }
+
+        // Now connect the field values
+        for (let i = 0; i < fieldCount; i++) {
+          const value = fieldValues[i];
+          if (value && typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
+            // This is a nested block, create it recursively
+            const childBlock = parseAndCreateBlock(value);
+
+            // Connect the child block to the FIELD input
+            const input = newBlock.getInput('FIELD' + i);
+            if (input && input.connection && childBlock.outputConnection) {
+              childBlock.outputConnection.connect(input.connection);
+            }
+          }
+        }
+      }
+    } else if (blockType === 'text_join') {
+      // Special handling for text_join block (and similar blocks with ADD0, ADD1, ADD2...)
+      // Count ADD entries to determine how many items we need
+      let addCount = 0;
+      const addValues = {};
+
+      for (const [key, value] of Object.entries(inputs)) {
+        const addMatch = key.match(/^ADD(\d+)$/);
+        if (addMatch) {
+          const index = parseInt(addMatch[1]);
+          addCount = Math.max(addCount, index + 1);
+          addValues[index] = value;
+        }
+      }
+
+      console.log('[SSE CREATE] text_join detected with', addCount, 'items');
+
+      // Store pending text_join state to apply after initSvg()
+      if (addCount > 0) {
+        newBlock.pendingAddCount_ = addCount;
+        newBlock.pendingAddValues_ = addValues;
+      }
+    } else if (blockType === 'controls_if') {
+      // Special handling for if/else blocks - create condition blocks now and store references
+      const conditionBlocks = {};
+      const conditionBlockObjects = {};
+      let hasElse = false;
+
+      console.log('[SSE CREATE] controls_if inputs:', inputs);
+
+      // Process condition inputs and store block objects
+      // Blockly uses IF0, IF1, IF2... not IF, IFELSEN0, IFELSEN1
+      for (const [key, value] of Object.entries(inputs)) {
+        if (key.match(/^IF\d+$/)) {
+          // This is a condition block specification (IF0, IF1, IF2, ...)
+          conditionBlocks[key] = value;
+
+          if (typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
+            // Create the condition block now
+            const conditionBlock = parseAndCreateBlock(value);
+            conditionBlockObjects[key] = conditionBlock;
+            console.log('[SSE CREATE] Created condition block for', key);
+          }
+        } else if (key === 'ELSE' && value === true) {
+          // ELSE is a marker with no value (set to true by parseInputs)
+          console.log('[SSE CREATE] Detected ELSE marker');
+          hasElse = true;
+        }
+      }
+
+      // Count IFELSE (else-if) blocks: IF1, IF2, IF3... (IF0 is the main if, not an else-if)
+      let elseIfCount = 0;
+      for (const key of Object.keys(conditionBlocks)) {
+        if (key.match(/^IF\d+$/) && key !== 'IF0') {
+          elseIfCount++;
+        }
+      }
+
+      console.log('[SSE CREATE] controls_if parsed: elseIfCount =', elseIfCount, 'hasElse =', hasElse);
+
+      // Store condition block OBJECTS for later - we'll connect them after mutator creates inputs
+      newBlock.pendingConditionBlockObjects_ = conditionBlockObjects;
+      newBlock.pendingElseifCount_ = elseIfCount;
+      newBlock.pendingElseCount_ = hasElse ? 1 : 0;
+      console.log('[SSE CREATE] Stored pending condition block objects:', Object.keys(conditionBlockObjects));
+      // Skip normal input processing for controls_if - we handle conditions after mutator
+    } else if (blockType !== 'controls_if') {
+      // Normal block handling (skip for controls_if which is handled specially)
+      for (const [key, value] of Object.entries(inputs)) {
+        if (typeof value === 'string') {
+          // Check if this is a nested block specification
+          if (value.match(/^\w+\s*\(inputs\(/)) {
+            // This is a nested block, create it recursively
+            const childBlock = parseAndCreateBlock(value);
+
+            // Connect the child block to the appropriate input
+            const input = newBlock.getInput(key);
+            if (input && input.connection && childBlock.outputConnection) {
+              childBlock.outputConnection.connect(input.connection);
+            }
+          } else {
+            // This is a simple value, set it as a field
+            // Remove quotes if present
+            const cleanValue = value.replace(/^["']|["']$/g, '');
+
+            // Try to set as a field value
+            try {
+              newBlock.setFieldValue(cleanValue, key);
+            } catch (e) {
+              console.log(`[SSE CREATE] Could not set field ${key} to ${cleanValue}:`, e);
+            }
+          }
+        } else if (typeof value === 'number') {
+          // Set numeric field value
+          try {
+            newBlock.setFieldValue(value, key);
+          } catch (e) {
+            console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
+          }
+        } else if (typeof value === 'boolean') {
+          // Set boolean field value
+          try {
+            newBlock.setFieldValue(value ? 'TRUE' : 'FALSE', key);
+          } catch (e) {
+            console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
+          }
+        }
+      }
+    }
+  }
+
+  // Initialize the block (renders it)
+  newBlock.initSvg();
+
+  // Apply pending controls_if mutations (must be after initSvg)
+  try {
+    console.log('[SSE CREATE] Checking for controls_if mutations: type =', newBlock.type, 'pendingElseifCount_ =', newBlock.pendingElseifCount_, 'pendingConditionBlockObjects_ =', !!newBlock.pendingConditionBlockObjects_);
+    if (newBlock.type === 'controls_if' && (newBlock.pendingElseifCount_ > 0 || newBlock.pendingElseCount_ > 0 || newBlock.pendingConditionBlockObjects_)) {
+      console.log('[SSE CREATE] ENTERING controls_if mutation block');
+      console.log('[SSE CREATE] Applying controls_if mutation:', {
+        elseifCount: newBlock.pendingElseifCount_,
+        elseCount: newBlock.pendingElseCount_
+      });
+
+      // Use the loadExtraState method if available (Blockly's preferred way)
+      if (typeof newBlock.loadExtraState === 'function') {
+        const state = {};
+        if (newBlock.pendingElseifCount_ > 0) {
+          state.elseIfCount = newBlock.pendingElseifCount_;
+        }
+        if (newBlock.pendingElseCount_ > 0) {
+          state.hasElse = true;
+        }
+        console.log('[SSE CREATE] Using loadExtraState with:', state);
+        newBlock.loadExtraState(state);
+        console.log('[SSE CREATE] After loadExtraState');
+      } else {
+        // Fallback: Set the internal state variables and call updateShape_
+        newBlock.elseifCount_ = newBlock.pendingElseifCount_;
+        newBlock.elseCount_ = newBlock.pendingElseCount_;
+
+        if (typeof newBlock.updateShape_ === 'function') {
+          console.log('[SSE CREATE] Calling updateShape_ on controls_if');
+          newBlock.updateShape_();
+        }
+      }
+
+      // Now that the mutator has created all the inputs, connect the stored condition block objects
+      console.log('[SSE CREATE] pendingConditionBlockObjects_ exists?', !!newBlock.pendingConditionBlockObjects_);
+      if (newBlock.pendingConditionBlockObjects_) {
+        const conditionBlockObjects = newBlock.pendingConditionBlockObjects_;
+        console.log('[SSE CREATE] Connecting condition blocks:', Object.keys(conditionBlockObjects));
+
+        // Connect the IF0 condition
+        if (conditionBlockObjects['IF0']) {
+          const ifBlock = conditionBlockObjects['IF0'];
+          const input = newBlock.getInput('IF0');
+          console.log('[SSE CREATE] IF0 input exists?', !!input);
+          if (input && input.connection && ifBlock.outputConnection) {
+            ifBlock.outputConnection.connect(input.connection);
+            console.log('[SSE CREATE] Connected IF0 condition');
+          } else {
+            console.warn('[SSE CREATE] Could not connect IF0 - input:', !!input, 'childConnection:', !!ifBlock.outputConnection);
+          }
+        }
+
+        // Connect IF1, IF2, IF3... (else-if conditions)
+        console.log('[SSE CREATE] Processing', newBlock.pendingElseifCount_, 'else-if conditions');
+        for (let i = 1; i <= newBlock.pendingElseifCount_; i++) {
+          const key = 'IF' + i;
+          console.log('[SSE CREATE] Looking for key:', key, 'exists?', !!conditionBlockObjects[key]);
+          if (conditionBlockObjects[key]) {
+            const ifElseBlock = conditionBlockObjects[key];
+            const input = newBlock.getInput(key);
+            console.log('[SSE CREATE] Input', key, 'exists?', !!input);
+            if (input && input.connection && ifElseBlock.outputConnection) {
+              ifElseBlock.outputConnection.connect(input.connection);
+              console.log('[SSE CREATE] Connected', key, 'condition');
+            } else {
+              console.warn('[SSE CREATE] Could not connect', key, '- input exists:', !!input, 'has connection:', input ? !!input.connection : false, 'childHasOutput:', !!ifElseBlock.outputConnection);
+            }
+          }
+        }
+      } else {
+        console.warn('[SSE CREATE] No pendingConditionBlockObjects_ found');
+      }
+
+      // Verify the ELSE input was created
+      if (newBlock.pendingElseCount_ > 0) {
+        const elseInput = newBlock.getInput('ELSE');
+        console.log('[SSE CREATE] ELSE input after mutation:', elseInput);
+        if (!elseInput) {
+          console.error('[SSE CREATE] ELSE input was NOT created!');
+        }
+      }
+
+      // Re-render after connecting condition blocks
+      newBlock.render();
+    }
+  } catch (err) {
+    console.error('[SSE CREATE] Error in controls_if mutations:', err);
+  }
+
+  // Apply pending text_join mutations (must be after initSvg)
+  if (newBlock.type === 'text_join' && newBlock.pendingAddCount_ && newBlock.pendingAddCount_ > 0) {
+    console.log('[SSE CREATE] Applying text_join mutation with', newBlock.pendingAddCount_, 'items');
+
+    const addCount = newBlock.pendingAddCount_;
+    const addValues = newBlock.pendingAddValues_;
+
+    // Use loadExtraState if available to set the item count
+    if (typeof newBlock.loadExtraState === 'function') {
+      newBlock.loadExtraState({ itemCount: addCount });
+    } else {
+      // Fallback: set internal state
+      newBlock.itemCount_ = addCount;
+    }
+
+    // Now connect the ADD values
+    for (let i = 0; i < addCount; i++) {
+      const value = addValues[i];
+      if (value && typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
+        // This is a nested block, create it recursively
+        const childBlock = parseAndCreateBlock(value);
+
+        // Connect the child block to the ADD input
+        const input = newBlock.getInput('ADD' + i);
+        if (input && input.connection && childBlock.outputConnection) {
+          childBlock.outputConnection.connect(input.connection);
+          console.log('[SSE CREATE] Connected ADD' + i + ' input');
+        } else {
+          console.warn('[SSE CREATE] Could not connect ADD' + i + ' input');
+        }
+      }
+    }
+  }
+
+  // Only position the top-level block
+  if (shouldPosition) {
+    // Find a good position that doesn't overlap existing blocks
+    const existingBlocks = ws.getAllBlocks();
+    let x = 50;
+    let y = 50;
+
+    // Simple positioning: stack new blocks vertically
+    if (existingBlocks.length > 0) {
+      const lastBlock = existingBlocks[existingBlocks.length - 1];
+      const lastPos = lastBlock.getRelativeToSurfaceXY();
+      y = lastPos.y + lastBlock.height + 20;
+    }
+
+    newBlock.moveBy(x, y);
+  }
+
+  // Render the block
+  newBlock.render();
+
+  return newBlock;
+}
+
+// Helper function to parse inputs(key: value, key2: value2, ...)
+function parseInputs(inputStr) {
+  const result = {};
+  let currentKey = '';
+  let currentValue = '';
+  let depth = 0;
+  let inQuotes = false;
+  let quoteChar = '';
+  let readingKey = true;
+
+  for (let i = 0; i < inputStr.length; i++) {
+    const char = inputStr[i];
+
+    // Handle quotes
+    if ((char === '"' || char === "'") && (i === 0 || inputStr[i - 1] !== '\\')) {
+      if (!inQuotes) {
+        inQuotes = true;
+        quoteChar = char;
+      } else if (char === quoteChar) {
+        inQuotes = false;
+        quoteChar = '';
+      }
+    }
+
+    // Handle parentheses depth (for nested blocks)
+    if (!inQuotes) {
+      if (char === '(') depth++;
+      else if (char === ')') depth--;
+    }
+
+    // Handle key-value separation
+    if (char === ':' && depth === 0 && !inQuotes && readingKey) {
+      readingKey = false;
+      currentKey = currentKey.trim();
+      continue;
+    }
+
+    // Handle comma separation
+    if (char === ',' && depth === 0 && !inQuotes && !readingKey) {
+      // Store the key-value pair
+      currentValue = currentValue.trim();
+
+      // Parse the value
+      if (currentValue.match(/^\w+\s*\(inputs\(/)) {
+        // This is a nested block
+        result[currentKey] = currentValue;
+      } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
+        // This is a number
+        result[currentKey] = parseFloat(currentValue);
+      } else if (currentValue === 'true' || currentValue === 'false') {
+        // This is a boolean
+        result[currentKey] = currentValue === 'true';
+      } else {
+        // This is a string (remove quotes if present)
+        result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
+      }
+
+      // Reset for next key-value pair
+      currentKey = '';
+      currentValue = '';
+      readingKey = true;
+      continue;
+    }
+
+    // Accumulate characters
+    if (readingKey) {
+      currentKey += char;
+    } else {
+      currentValue += char;
+    }
+  }
+
+  // Handle the last key-value pair
+  if (currentKey) {
+    currentKey = currentKey.trim();
+
+    // If there's no value, this is a flag/marker (like ELSE)
+    if (!currentValue) {
+      result[currentKey] = true;  // Mark it as present
+    } else {
+      currentValue = currentValue.trim();
+
+      // Parse the value
+      if (currentValue.match(/^\w+\s*\(inputs\(/)) {
+        // This is a nested block
+        result[currentKey] = currentValue;
+      } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
+        // This is a number
+        result[currentKey] = parseFloat(currentValue);
+      } else if (currentValue === 'true' || currentValue === 'false') {
+        // This is a boolean
+        result[currentKey] = currentValue === 'true';
+      } else {
+        // This is a string (remove quotes if present)
+        result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
+      }
+    }
+  }
+
+  return result;
+}
+
 // Set up unified SSE connection for all workspace operations
 const setupUnifiedStream = () => {
   const eventSource = new EventSource('/unified_stream');
@@ -245,6 +796,8 @@ const setupUnifiedStream = () => {
         requestKey = `variable_${data.request_id}`;
       } else if (data.type === 'edit_mcp') {
         requestKey = `edit_mcp_${data.request_id}`;
+      } else if (data.type === 'replace') {
+        requestKey = `replace_${data.request_id}`;
       }
 
       // Skip if we've already processed this request
@@ -341,6 +894,100 @@ const setupUnifiedStream = () => {
           console.error('[SSE] Error sending edit MCP result:', err);
         });
       }
+      // Handle replace block requests
+      else if (data.type === 'replace' && data.block_id && data.block_spec && data.request_id) {
+        console.log('[SSE] Received replace request for block:', data.block_id, data.block_spec);
+
+        let success = false;
+        let error = null;
+        let blockId = null;
+
+        try {
+          // Get the block to be replaced
+          const blockToReplace = ws.getBlockById(data.block_id);
+
+          if (!blockToReplace) {
+            throw new Error(`Block ${data.block_id} not found`);
+          }
+
+          // Store the parent and connection info before deletion
+          const parentBlock = blockToReplace.getParent();
+          const previousBlock = blockToReplace.getPreviousBlock();
+          const nextBlock = blockToReplace.getNextBlock();
+          let parentConnection = null;
+          let connectionType = null;
+          let inputName = null;
+
+          // Check if this block is connected to a parent's input
+          if (blockToReplace.outputConnection && blockToReplace.outputConnection.targetConnection) {
+            parentConnection = blockToReplace.outputConnection.targetConnection;
+          } else if (blockToReplace.previousConnection && blockToReplace.previousConnection.targetConnection) {
+            parentConnection = blockToReplace.previousConnection.targetConnection;
+          }
+
+          // If the block is in an input socket, get that info
+          if (parentBlock) {
+            const inputs = parentBlock.inputList;
+            for (const input of inputs) {
+              if (input.connection && input.connection.targetBlock() === blockToReplace) {
+                inputName = input.name;
+                break;
+              }
+            }
+          }
+
+          // Create the new block using the shared function (no positioning, no placement type for replace)
+          const newBlock = parseAndCreateBlock(data.block_spec, false, null, null);
+
+          if (!newBlock) {
+            throw new Error('Failed to create replacement block');
+          }
+
+          // Reattach the new block to the parent connection
+          if (parentConnection) {
+            if (newBlock.outputConnection) {
+              parentConnection.connect(newBlock.outputConnection);
+            } else if (newBlock.previousConnection) {
+              parentConnection.connect(newBlock.previousConnection);
+            }
+          }
+
+          // Reattach next block if it was connected
+          if (nextBlock && newBlock.nextConnection) {
+            newBlock.nextConnection.connect(nextBlock.previousConnection);
+          }
+
+          // Dispose the old block
+          blockToReplace.dispose(true);
+
+          // Render the workspace
+          ws.render();
+
+          success = true;
+          blockId = newBlock.id;
+          console.log('[SSE] Successfully replaced block:', data.block_id, 'with:', newBlock.id);
+        } catch (e) {
+          error = e.toString();
+          console.error('[SSE] Error replacing block:', e);
+        }
+
+        // Send result back to backend
+        console.log('[SSE] Sending replace block result:', { request_id: data.request_id, success, error, block_id: blockId });
+        fetch('/replace_block_result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_id: data.request_id,
+            success: success,
+            error: error,
+            block_id: blockId
+          })
+        }).then(response => {
+          console.log('[SSE] Replace block result sent successfully');
+        }).catch(err => {
+          console.error('[SSE] Error sending replace block result:', err);
+        });
+      }
       // Handle deletion requests
       else if (data.type === 'delete' && data.block_id) {
         console.log('[SSE] Received deletion request for block:', data.block_id);
@@ -396,558 +1043,6 @@ const setupUnifiedStream = () => {
         let blockId = null;
 
         try {
-          // Parse and create blocks recursively
-          function parseAndCreateBlock(spec, shouldPosition = false, placementType = null, placementBlockID = null) {
-            // Match block_name(inputs(...)) with proper parenthesis matching
-            const blockMatch = spec.match(/^(\w+)\s*\((.*)$/s);
-
-            if (!blockMatch) {
-              throw new Error(`Invalid block specification format: ${spec}`);
-            }
-
-            const blockType = blockMatch[1];
-            let content = blockMatch[2].trim();
-
-            // We need to find the matching closing parenthesis for blockType(
-            // Count from the beginning and find where the matching ) is
-            let parenCount = 1; // We already have the opening (
-            let matchIndex = -1;
-            let inQuotes = false;
-            let quoteChar = '';
-
-            for (let i = 0; i < content.length; i++) {
-              const char = content[i];
-
-              // Handle quotes
-              if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {
-                if (!inQuotes) {
-                  inQuotes = true;
-                  quoteChar = char;
-                } else if (char === quoteChar) {
-                  inQuotes = false;
-                }
-              }
-
-              // Only count parens outside quotes
-              if (!inQuotes) {
-                if (char === '(') parenCount++;
-                else if (char === ')') {
-                  parenCount--;
-                  if (parenCount === 0) {
-                    matchIndex = i;
-                    break;
-                  }
-                }
-              }
-            }
-
-            // Extract content up to the matching closing paren
-            if (matchIndex >= 0) {
-              content = content.slice(0, matchIndex).trim();
-            } else {
-              // Fallback: remove last paren if present
-              if (content.endsWith(')')) {
-                content = content.slice(0, -1).trim();
-              }
-            }
-
-            console.log('[SSE CREATE] Parsing block:', blockType, 'with content:', content);
-
-            // Check if this has inputs() wrapper
-            let inputsContent = content;
-            if (content.startsWith('inputs(')) {
-              // Find the matching closing parenthesis for inputs(
-              parenCount = 1;
-              matchIndex = -1;
-              inQuotes = false;
-              quoteChar = '';
-
-              for (let i = 7; i < content.length; i++) { // Start after 'inputs('
-                const char = content[i];
-
-                // Handle quotes
-                if ((char === '"' || char === "'") && (i === 0 || content[i - 1] !== '\\')) {
-                  if (!inQuotes) {
-                    inQuotes = true;
-                    quoteChar = char;
-                  } else if (char === quoteChar) {
-                    inQuotes = false;
-                  }
-                }
-
-                // Only count parens outside quotes
-                if (!inQuotes) {
-                  if (char === '(') parenCount++;
-                  else if (char === ')') {
-                    parenCount--;
-                    if (parenCount === 0) {
-                      matchIndex = i;
-                      break;
-                    }
-                  }
-                }
-              }
-
-              // Extract content between inputs( and its matching )
-              if (matchIndex >= 0) {
-                inputsContent = content.slice(7, matchIndex);
-              } else {
-                // Fallback: remove inputs( and last )
-                if (content.endsWith(')')) {
-                  inputsContent = content.slice(7, -1);
-                } else {
-                  inputsContent = content.slice(7);
-                }
-              }
-            }
-
-            console.log('[SSE CREATE] inputsContent to parse:', inputsContent);
-
-            // VALIDATION: Check if trying to place a value block under a statement block
-            // Value blocks have an output connection but no previous connection
-            if (placementType === 'under') {
-              // Check if this block type is a value block by temporarily creating it
-              const testBlock = ws.newBlock(blockType);
-              const isValueBlock = testBlock.outputConnection && !testBlock.previousConnection;
-              testBlock.dispose(true); // Remove the test block
-
-              if (isValueBlock) {
-                throw new Error(`Cannot place value block '${blockType}' under a statement block. Value blocks must be nested inside inputs of other blocks or placed in MCP outputs using type: "input". Try creating a variable and assigning the value to that.`);
-              }
-            }
-
-            // Create the block
-            const newBlock = ws.newBlock(blockType);
-
-            if (inputsContent) {
-              // Parse the inputs content
-              console.log('[SSE CREATE] About to call parseInputs with:', inputsContent);
-              const inputs = parseInputs(inputsContent);
-              console.log('[SSE CREATE] Parsed inputs:', inputs);
-
-              // Special handling for make_json block
-              if (blockType === 'make_json') {
-                // Count FIELD entries to determine how many fields we need
-                let fieldCount = 0;
-                const fieldValues = {};
-                const keyValues = {};
-
-                for (const [key, value] of Object.entries(inputs)) {
-                  const fieldMatch = key.match(/^FIELD(\d+)$/);
-                  const keyMatch = key.match(/^KEY(\d+)$/);
-
-                  if (fieldMatch) {
-                    const index = parseInt(fieldMatch[1]);
-                    fieldCount = Math.max(fieldCount, index + 1);
-                    fieldValues[index] = value;
-                  } else if (keyMatch) {
-                    const index = parseInt(keyMatch[1]);
-                    keyValues[index] = value;
-                  }
-                }
-
-                // Set up the mutator state
-                if (fieldCount > 0) {
-                  newBlock.fieldCount_ = fieldCount;
-                  newBlock.fieldKeys_ = [];
-
-                  // Create the inputs through the mutator
-                  for (let i = 0; i < fieldCount; i++) {
-                    const keyValue = keyValues[i];
-                    const key = (typeof keyValue === 'string' && !keyValue.match(/^\w+\s*\(inputs\(/))
-                      ? keyValue.replace(/^["']|["']$/g, '')
-                      : `key${i}`;
-
-                    newBlock.fieldKeys_[i] = key;
-
-                    // Create the input
-                    const input = newBlock.appendValueInput('FIELD' + i);
-                    const field = new Blockly.FieldTextInput(key);
-                    field.setValidator((newValue) => {
-                      newBlock.fieldKeys_[i] = newValue || `key${i}`;
-                      return newValue;
-                    });
-                    input.appendField(field, 'KEY' + i);
-                    input.appendField(':');
-                  }
-
-                  // Now connect the field values
-                  for (let i = 0; i < fieldCount; i++) {
-                    const value = fieldValues[i];
-                    if (value && typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
-                      // This is a nested block, create it recursively
-                      const childBlock = parseAndCreateBlock(value);
-
-                      // Connect the child block to the FIELD input
-                      const input = newBlock.getInput('FIELD' + i);
-                      if (input && input.connection && childBlock.outputConnection) {
-                        childBlock.outputConnection.connect(input.connection);
-                      }
-                    }
-                  }
-                }
-              } else if (blockType === 'text_join') {
-                // Special handling for text_join block (and similar blocks with ADD0, ADD1, ADD2...)
-                // Count ADD entries to determine how many items we need
-                let addCount = 0;
-                const addValues = {};
-
-                for (const [key, value] of Object.entries(inputs)) {
-                  const addMatch = key.match(/^ADD(\d+)$/);
-                  if (addMatch) {
-                    const index = parseInt(addMatch[1]);
-                    addCount = Math.max(addCount, index + 1);
-                    addValues[index] = value;
-                  }
-                }
-
-                console.log('[SSE CREATE] text_join detected with', addCount, 'items');
-
-                // Store pending text_join state to apply after initSvg()
-                if (addCount > 0) {
-                  newBlock.pendingAddCount_ = addCount;
-                  newBlock.pendingAddValues_ = addValues;
-                }
-              } else if (blockType === 'controls_if') {
-                // Special handling for if/else blocks - create condition blocks now and store references
-                const conditionBlocks = {};
-                const conditionBlockObjects = {};
-                let hasElse = false;
-
-                console.log('[SSE CREATE] controls_if inputs:', inputs);
-
-                // Process condition inputs and store block objects
-                // Blockly uses IF0, IF1, IF2... not IF, IFELSEN0, IFELSEN1
-                for (const [key, value] of Object.entries(inputs)) {
-                  if (key.match(/^IF\d+$/)) {
-                    // This is a condition block specification (IF0, IF1, IF2, ...)
-                    conditionBlocks[key] = value;
-
-                    if (typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
-                      // Create the condition block now
-                      const conditionBlock = parseAndCreateBlock(value);
-                      conditionBlockObjects[key] = conditionBlock;
-                      console.log('[SSE CREATE] Created condition block for', key);
-                    }
-                  } else if (key === 'ELSE' && value === true) {
-                    // ELSE is a marker with no value (set to true by parseInputs)
-                    console.log('[SSE CREATE] Detected ELSE marker');
-                    hasElse = true;
-                  }
-                }
-
-                // Count IFELSE (else-if) blocks: IF1, IF2, IF3... (IF0 is the main if, not an else-if)
-                let elseIfCount = 0;
-                for (const key of Object.keys(conditionBlocks)) {
-                  if (key.match(/^IF\d+$/) && key !== 'IF0') {
-                    elseIfCount++;
-                  }
-                }
-
-                console.log('[SSE CREATE] controls_if parsed: elseIfCount =', elseIfCount, 'hasElse =', hasElse);
-
-                // Store condition block OBJECTS for later - we'll connect them after mutator creates inputs
-                newBlock.pendingConditionBlockObjects_ = conditionBlockObjects;
-                newBlock.pendingElseifCount_ = elseIfCount;
-                newBlock.pendingElseCount_ = hasElse ? 1 : 0;
-                console.log('[SSE CREATE] Stored pending condition block objects:', Object.keys(conditionBlockObjects));
-                // Skip normal input processing for controls_if - we handle conditions after mutator
-              } else if (blockType !== 'controls_if') {
-                // Normal block handling (skip for controls_if which is handled specially)
-                for (const [key, value] of Object.entries(inputs)) {
-                  if (typeof value === 'string') {
-                    // Check if this is a nested block specification
-                    if (value.match(/^\w+\s*\(inputs\(/)) {
-                      // This is a nested block, create it recursively
-                      const childBlock = parseAndCreateBlock(value);
-
-                      // Connect the child block to the appropriate input
-                      const input = newBlock.getInput(key);
-                      if (input && input.connection && childBlock.outputConnection) {
-                        childBlock.outputConnection.connect(input.connection);
-                      }
-                    } else {
-                      // This is a simple value, set it as a field
-                      // Remove quotes if present
-                      const cleanValue = value.replace(/^["']|["']$/g, '');
-
-                      // Try to set as a field value
-                      try {
-                        newBlock.setFieldValue(cleanValue, key);
-                      } catch (e) {
-                        console.log(`[SSE CREATE] Could not set field ${key} to ${cleanValue}:`, e);
-                      }
-                    }
-                  } else if (typeof value === 'number') {
-                    // Set numeric field value
-                    try {
-                      newBlock.setFieldValue(value, key);
-                    } catch (e) {
-                      console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
-                    }
-                  } else if (typeof value === 'boolean') {
-                    // Set boolean field value
-                    try {
-                      newBlock.setFieldValue(value ? 'TRUE' : 'FALSE', key);
-                    } catch (e) {
-                      console.log(`[SSE CREATE] Could not set field ${key} to ${value}:`, e);
-                    }
-                  }
-                }
-              }
-            }
-
-            // Initialize the block (renders it)
-            newBlock.initSvg();
-
-            // Apply pending controls_if mutations (must be after initSvg)
-            try {
-              console.log('[SSE CREATE] Checking for controls_if mutations: type =', newBlock.type, 'pendingElseifCount_ =', newBlock.pendingElseifCount_, 'pendingConditionBlockObjects_ =', !!newBlock.pendingConditionBlockObjects_);
-              if (newBlock.type === 'controls_if' && (newBlock.pendingElseifCount_ > 0 || newBlock.pendingElseCount_ > 0 || newBlock.pendingConditionBlockObjects_)) {
-                console.log('[SSE CREATE] ENTERING controls_if mutation block');
-                console.log('[SSE CREATE] Applying controls_if mutation:', {
-                  elseifCount: newBlock.pendingElseifCount_,
-                  elseCount: newBlock.pendingElseCount_
-                });
-
-                // Use the loadExtraState method if available (Blockly's preferred way)
-                if (typeof newBlock.loadExtraState === 'function') {
-                  const state = {};
-                  if (newBlock.pendingElseifCount_ > 0) {
-                    state.elseIfCount = newBlock.pendingElseifCount_;
-                  }
-                  if (newBlock.pendingElseCount_ > 0) {
-                    state.hasElse = true;
-                  }
-                  console.log('[SSE CREATE] Using loadExtraState with:', state);
-                  newBlock.loadExtraState(state);
-                  console.log('[SSE CREATE] After loadExtraState');
-                } else {
-                  // Fallback: Set the internal state variables and call updateShape_
-                  newBlock.elseifCount_ = newBlock.pendingElseifCount_;
-                  newBlock.elseCount_ = newBlock.pendingElseCount_;
-
-                  if (typeof newBlock.updateShape_ === 'function') {
-                    console.log('[SSE CREATE] Calling updateShape_ on controls_if');
-                    newBlock.updateShape_();
-                  }
-                }
-
-                // Now that the mutator has created all the inputs, connect the stored condition block objects
-                console.log('[SSE CREATE] pendingConditionBlockObjects_ exists?', !!newBlock.pendingConditionBlockObjects_);
-                if (newBlock.pendingConditionBlockObjects_) {
-                  const conditionBlockObjects = newBlock.pendingConditionBlockObjects_;
-                  console.log('[SSE CREATE] Connecting condition blocks:', Object.keys(conditionBlockObjects));
-
-                  // Connect the IF0 condition
-                  if (conditionBlockObjects['IF0']) {
-                    const ifBlock = conditionBlockObjects['IF0'];
-                    const input = newBlock.getInput('IF0');
-                    console.log('[SSE CREATE] IF0 input exists?', !!input);
-                    if (input && input.connection && ifBlock.outputConnection) {
-                      ifBlock.outputConnection.connect(input.connection);
-                      console.log('[SSE CREATE] Connected IF0 condition');
-                    } else {
-                      console.warn('[SSE CREATE] Could not connect IF0 - input:', !!input, 'childConnection:', !!ifBlock.outputConnection);
-                    }
-                  }
-
-                  // Connect IF1, IF2, IF3... (else-if conditions)
-                  console.log('[SSE CREATE] Processing', newBlock.pendingElseifCount_, 'else-if conditions');
-                  for (let i = 1; i <= newBlock.pendingElseifCount_; i++) {
-                    const key = 'IF' + i;
-                    console.log('[SSE CREATE] Looking for key:', key, 'exists?', !!conditionBlockObjects[key]);
-                    if (conditionBlockObjects[key]) {
-                      const ifElseBlock = conditionBlockObjects[key];
-                      const input = newBlock.getInput(key);
-                      console.log('[SSE CREATE] Input', key, 'exists?', !!input);
-                      if (input && input.connection && ifElseBlock.outputConnection) {
-                        ifElseBlock.outputConnection.connect(input.connection);
-                        console.log('[SSE CREATE] Connected', key, 'condition');
-                      } else {
-                        console.warn('[SSE CREATE] Could not connect', key, '- input exists:', !!input, 'has connection:', input ? !!input.connection : false, 'childHasOutput:', !!ifElseBlock.outputConnection);
-                      }
-                    }
-                  }
-                } else {
-                  console.warn('[SSE CREATE] No pendingConditionBlockObjects_ found');
-                }
-
-                // Verify the ELSE input was created
-                if (newBlock.pendingElseCount_ > 0) {
-                  const elseInput = newBlock.getInput('ELSE');
-                  console.log('[SSE CREATE] ELSE input after mutation:', elseInput);
-                  if (!elseInput) {
-                    console.error('[SSE CREATE] ELSE input was NOT created!');
-                  }
-                }
-
-                // Re-render after connecting condition blocks
-                newBlock.render();
-              }
-            } catch (err) {
-              console.error('[SSE CREATE] Error in controls_if mutations:', err);
-            }
-
-            // Apply pending text_join mutations (must be after initSvg)
-            if (newBlock.type === 'text_join' && newBlock.pendingAddCount_ && newBlock.pendingAddCount_ > 0) {
-              console.log('[SSE CREATE] Applying text_join mutation with', newBlock.pendingAddCount_, 'items');
-
-              const addCount = newBlock.pendingAddCount_;
-              const addValues = newBlock.pendingAddValues_;
-
-              // Use loadExtraState if available to set the item count
-              if (typeof newBlock.loadExtraState === 'function') {
-                newBlock.loadExtraState({ itemCount: addCount });
-              } else {
-                // Fallback: set internal state
-                newBlock.itemCount_ = addCount;
-              }
-
-              // Now connect the ADD values
-              for (let i = 0; i < addCount; i++) {
-                const value = addValues[i];
-                if (value && typeof value === 'string' && value.match(/^\w+\s*\(inputs\(/)) {
-                  // This is a nested block, create it recursively
-                  const childBlock = parseAndCreateBlock(value);
-
-                  // Connect the child block to the ADD input
-                  const input = newBlock.getInput('ADD' + i);
-                  if (input && input.connection && childBlock.outputConnection) {
-                    childBlock.outputConnection.connect(input.connection);
-                    console.log('[SSE CREATE] Connected ADD' + i + ' input');
-                  } else {
-                    console.warn('[SSE CREATE] Could not connect ADD' + i + ' input');
-                  }
-                }
-              }
-            }
-
-            // Only position the top-level block
-            if (shouldPosition) {
-              // Find a good position that doesn't overlap existing blocks
-              const existingBlocks = ws.getAllBlocks();
-              let x = 50;
-              let y = 50;
-
-              // Simple positioning: stack new blocks vertically
-              if (existingBlocks.length > 0) {
-                const lastBlock = existingBlocks[existingBlocks.length - 1];
-                const lastPos = lastBlock.getRelativeToSurfaceXY();
-                y = lastPos.y + lastBlock.height + 20;
-              }
-
-              newBlock.moveBy(x, y);
-            }
-
-            // Render the block
-            newBlock.render();
-
-            return newBlock;
-          }
-
-          // Helper function to parse inputs(key: value, key2: value2, ...)
-          function parseInputs(inputStr) {
-            const result = {};
-            let currentKey = '';
-            let currentValue = '';
-            let depth = 0;
-            let inQuotes = false;
-            let quoteChar = '';
-            let readingKey = true;
-
-            for (let i = 0; i < inputStr.length; i++) {
-              const char = inputStr[i];
-
-              // Handle quotes
-              if ((char === '"' || char === "'") && (i === 0 || inputStr[i - 1] !== '\\')) {
-                if (!inQuotes) {
-                  inQuotes = true;
-                  quoteChar = char;
-                } else if (char === quoteChar) {
-                  inQuotes = false;
-                  quoteChar = '';
-                }
-              }
-
-              // Handle parentheses depth (for nested blocks)
-              if (!inQuotes) {
-                if (char === '(') depth++;
-                else if (char === ')') depth--;
-              }
-
-              // Handle key-value separation
-              if (char === ':' && depth === 0 && !inQuotes && readingKey) {
-                readingKey = false;
-                currentKey = currentKey.trim();
-                continue;
-              }
-
-              // Handle comma separation
-              if (char === ',' && depth === 0 && !inQuotes && !readingKey) {
-                // Store the key-value pair
-                currentValue = currentValue.trim();
-
-                // Parse the value
-                if (currentValue.match(/^\w+\s*\(inputs\(/)) {
-                  // This is a nested block
-                  result[currentKey] = currentValue;
-                } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
-                  // This is a number
-                  result[currentKey] = parseFloat(currentValue);
-                } else if (currentValue === 'true' || currentValue === 'false') {
-                  // This is a boolean
-                  result[currentKey] = currentValue === 'true';
-                } else {
-                  // This is a string (remove quotes if present)
-                  result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
-                }
-
-                // Reset for next key-value pair
-                currentKey = '';
-                currentValue = '';
-                readingKey = true;
-                continue;
-              }
-
-              // Accumulate characters
-              if (readingKey) {
-                currentKey += char;
-              } else {
-                currentValue += char;
-              }
-            }
-
-            // Handle the last key-value pair
-            if (currentKey) {
-              currentKey = currentKey.trim();
-
-              // If there's no value, this is a flag/marker (like ELSE)
-              if (!currentValue) {
-                result[currentKey] = true;  // Mark it as present
-              } else {
-                currentValue = currentValue.trim();
-
-                // Parse the value
-                if (currentValue.match(/^\w+\s*\(inputs\(/)) {
-                  // This is a nested block
-                  result[currentKey] = currentValue;
-                } else if (currentValue.match(/^-?\d+(\.\d+)?$/)) {
-                  // This is a number
-                  result[currentKey] = parseFloat(currentValue);
-                } else if (currentValue === 'true' || currentValue === 'false') {
-                  // This is a boolean
-                  result[currentKey] = currentValue === 'true';
-                } else {
-                  // This is a string (remove quotes if present)
-                  result[currentKey] = currentValue.replace(/^["']|["']$/g, '');
-                }
-              }
-            }
-
-            return result;
-          }
-
           // Create the block and all its nested children
           const newBlock = parseAndCreateBlock(data.block_spec, true, data.placement_type, data.blockID);
 
