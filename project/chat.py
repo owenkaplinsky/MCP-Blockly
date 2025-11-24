@@ -1139,28 +1139,40 @@ def create_gradio_interface():
                             
                             # Only proceed if validation passed (no error was set)
                             if tool_result is None:
-                                # Check if this is the first MCP output block creation attempt
-                                if (not first_output_block_attempted and 
-                                    placement_type == "input" and 
-                                    input_name and 
-                                    input_name.startswith("R")):
-                                    is_first_output_attempt = True
-                                    # Mark that we've attempted an output block in this conversation
-                                    first_output_block_attempted = True
-                                    # Return warning instead of creating the block
-                                    tool_result = "[TOOL] Automated warning: Make sure your output block contains the full and entire value needed. Block placement was **not** executed. Retry with the full command needed in one go."
-                                    result_label = "Output Block Warning"
-                                    print(Fore.YELLOW + f"[FIRST OUTPUT BLOCK] Intercepted first output block attempt with command `{command}`." + Style.RESET_ALL)
-                                else:
-                                    # Normal block creation
-                                    if blockID is None:
-                                        print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
+                                # Validate type: "input" usage with input_name
+                                if placement_type == "input" and input_name:
+                                    valid_mcp_outputs = all(input_name.startswith("R") and input_name[1:].isdigit() for _ in [input_name]) if input_name.startswith("R") else False
+                                    valid_conditional_branches = input_name in ("DO0", "DO1", "DO2", "DO3", "DO4", "DO5", "ELSE") or input_name.startswith("DO")
+                                    
+                                    if not valid_mcp_outputs and not valid_conditional_branches:
+                                        tool_result = f"[ERROR] Invalid input_name '{input_name}' used with type: 'input'. Valid values are:\n- MCP output slots: 'R0', 'R1', 'R2', etc.\n- Conditional branches: 'DO0', 'DO1', 'DO2', etc., or 'ELSE'\n\nThe attempted command was:\n\n`{command_stripped}`"
+                                        result_label = "Invalid Placement Error"
+                                        print(Fore.RED + f"[VALIDATION ERROR] Invalid input_name for type 'input': {input_name}" + Style.RESET_ALL)
+                                
+                                # Only proceed if no validation errors
+                                if tool_result is None:
+                                    # Check if this is the first MCP output block creation attempt
+                                    if (not first_output_block_attempted and 
+                                        placement_type == "input" and 
+                                        input_name and 
+                                        input_name.startswith("R")):
+                                        is_first_output_attempt = True
+                                        # Mark that we've attempted an output block in this conversation
+                                        first_output_block_attempted = True
+                                        # Return warning instead of creating the block
+                                        tool_result = "[TOOL] Automated warning: Make sure your output block contains the full and entire value needed. Block placement was **not** executed. Retry with the full command needed in one go."
+                                        result_label = "Output Block Warning"
+                                        print(Fore.YELLOW + f"[FIRST OUTPUT BLOCK] Intercepted first output block attempt with command `{command}`." + Style.RESET_ALL)
                                     else:
-                                        print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
-                                    if input_name:
-                                        print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
-                                    tool_result = create_block(command, blockID, placement_type, input_name)
-                                    result_label = "Create Operation"
+                                        # Normal block creation
+                                        if blockID is None:
+                                            print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
+                                        else:
+                                            print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
+                                        if input_name:
+                                            print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
+                                        tool_result = create_block(command, blockID, placement_type, input_name)
+                                        result_label = "Create Operation"
                         
                         elif function_name == "create_variable":
                             name = function_args.get("name", "")

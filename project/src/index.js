@@ -1274,7 +1274,7 @@ const updateCode = () => {
   const blocks = ws.getAllBlocks(false);
   const hasCall = blocks.some(block => block.type === 'llm_call');
   const hasAPI = blocks.some(block => block.type === 'call_api');
-  const hasPrime = code.includes('math_isPrime()');
+  const hasPrime = code.includes('math_isPrime(');
   const hasNumberCheck = code.includes('isinstance(') && code.includes(', Number)');
 
   if (hasCall) {
@@ -1285,9 +1285,9 @@ const updateCode = () => {
     code = API + code;
   }
 
-  // Replace math_isPrime() with isprime() and add sympy import
+  // Replace math_isPrime(...) with isprime(...) and add sympy import
   if (hasPrime) {
-    code = code.replace(/math_isPrime\(\)/g, 'isprime()');
+    code = code.replace(/math_isPrime\(([^)]*)\)/g, 'isprime($1)');
     code = "from sympy import isprime\n\n" + code;
   }
 
