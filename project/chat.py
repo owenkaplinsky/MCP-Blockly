@@ -786,7 +786,9 @@ def create_gradio_interface():
 
     4. **Check the create_mcp block state:** Before using `type: "input"` and `input_name: "name"`, verify that the create_mcp block has outputs defined in the workspace state. If you do not see `outputs(...)` in the create_mcp block, do NOT use these parameters.
 
-    5. Perform the actions in order without asking for approval or asking to wait for intermediate results."""
+    5. Perform the actions in order without asking for approval or asking to wait for intermediate results.
+    
+    6. Before stopping, you must confirm that every single output slot of the MCP block is filled. You must explicitly confirm this and if not all output slots are filled in, you must do so immediately."""
     tools = [
         {
             "type": "function",
@@ -1093,31 +1095,72 @@ def create_gradio_interface():
                             placement_type = function_args.get("type", None)
                             input_name = function_args.get("input_name", None)
                             
-                            # Check if this is the first MCP output block creation attempt
-                            is_first_output_attempt = (
-                                not first_output_block_attempted and 
-                                placement_type == "input" and 
-                                input_name and 
-                                input_name.startswith("R")
-                            )
+                            # Validate that parentheses are balanced, ignoring ones in strings
+                            # Allow leniency: auto-add up to 1 missing closing parenthesis
+                            command_stripped = command.strip()
+                            open_parens = 0
+                            close_parens = 0
+                            in_string = False
+                            string_char = ''
+                            i = 0
+                            while i < len(command_stripped):
+                                char = command_stripped[i]
+                                # Handle string escaping
+                                if char in ('"', "'") and (i == 0 or command_stripped[i-1] != '\\'):
+                                    if not in_string:
+                                        in_string = True
+                                        string_char = char
+                                    elif char == string_char:
+                                        in_string = False
+                                # Count parentheses only outside of strings
+                                elif not in_string:
+                                    if char == '(':
+                                        open_parens += 1
+                                    elif char == ')':
+                                        close_parens += 1
+                                i += 1
                             
-                            if is_first_output_attempt:
-                                # Mark that we've attempted an output block in this conversation
-                                first_output_block_attempted = True
-                                # Return warning instead of creating the block
-                                tool_result = "[TOOL] Automated warning: Make sure your output block contains the full and entire value needed. Block placement was **not** executed. Retry with the full command needed in one go."
-                                result_label = "Output Block Warning"
-                                print(Fore.YELLOW + f"[FIRST OUTPUT BLOCK] Intercepted first output block attempt with command `{command}`." + Style.RESET_ALL)
-                            else:
-                                # Normal block creation
-                                if blockID is None:
-                                    print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
+                            paren_diff = open_parens - close_parens
+                            if paren_diff == 1:
+                                # Auto-fix: add one closing parenthesis
+                                command = command_stripped + ')'
+                                print(Fore.YELLOW + f"[LENIENCY] Auto-fixed 1 missing closing parenthesis." + Style.RESET_ALL)
+                                # Continue with block creation below
+                                tool_result = None
+                                result_label = ""
+                            elif paren_diff > 1:
+                                tool_result = f"[ERROR] Malformatted command: Too many unbalanced parentheses ({paren_diff} missing). The attempted command was:\n\n`{command_stripped}`\n\nPlease retry with properly balanced parentheses."
+                                result_label = "Command Format Error"
+                                print(Fore.RED + f"[VALIDATION ERROR] Unbalanced parentheses: {open_parens} open, {close_parens} close." + Style.RESET_ALL)
+                            elif paren_diff < 0:
+                                tool_result = f"[ERROR] Malformatted command: Too many closing parentheses ({-paren_diff} extra). The attempted command was:\n\n`{command_stripped}`\n\nPlease retry with properly balanced parentheses."
+                                result_label = "Command Format Error"
+                                print(Fore.RED + f"[VALIDATION ERROR] Unbalanced parentheses: {open_parens} open, {close_parens} close." + Style.RESET_ALL)
+                            
+                            # Only proceed if validation passed (no error was set)
+                            if tool_result is None:
+                                # Check if this is the first MCP output block creation attempt
+                                if (not first_output_block_attempted and 
+                                    placement_type == "input" and 
+                                    input_name and 
+                                    input_name.startswith("R")):
+                                    is_first_output_attempt = True
+                                    # Mark that we've attempted an output block in this conversation
+                                    first_output_block_attempted = True
+                                    # Return warning instead of creating the block
+                                    tool_result = "[TOOL] Automated warning: Make sure your output block contains the full and entire value needed. Block placement was **not** executed. Retry with the full command needed in one go."
+                                    result_label = "Output Block Warning"
+                                    print(Fore.YELLOW + f"[FIRST OUTPUT BLOCK] Intercepted first output block attempt with command `{command}`." + Style.RESET_ALL)
                                 else:
-                                    print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
-                                if input_name:
-                                    print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
-                                tool_result = create_block(command, blockID, placement_type, input_name)
-                                result_label = "Create Operation"
+                                    # Normal block creation
+                                    if blockID is None:
+                                        print(Fore.YELLOW + f"Agent created block with command `{command}`." + Style.RESET_ALL)
+                                    else:
+                                        print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
+                                    if input_name:
+                                        print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
+                                    tool_result = create_block(command, blockID, placement_type, input_name)
+                                    result_label = "Create Operation"
                         
                         elif function_name == "create_variable":
                             name = function_args.get("name", "")

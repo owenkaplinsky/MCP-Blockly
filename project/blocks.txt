@@ -28,7 +28,7 @@ VALUE: math_single(inputs(OP: "ROOT/ABS/NEG/LN/LOG10/EXP/POW10", NUM: value)) //
 VALUE: math_number_property(inputs(PROPERTY: "EVEN/ODD/PRIME/WHOLE/POSITIVE/NEGATIVE", NUMBER_TO_CHECK: value)) // Boolean output
 VALUE: math_round(inputs(OP: "ROUND/ROUNDUP/ROUNDDOWN", NUM: value))
 VALUE: math_modulo(inputs(DIVIDEND: value, DIVISOR: value))
-VALUE: math_constrain(VALUE: value, LOW: value, HIGH: value)
+VALUE: math_constrain(inputs(VALUE: value, LOW: value, HIGH: value))
 VALUE: math_random_int(inputs(FROM: value, TO: value))
 
 # Text
