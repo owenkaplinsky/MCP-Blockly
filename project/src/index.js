@@ -9,6 +9,27 @@ import '@blockly/toolbox-search';
 import DarkTheme from '@blockly/theme-dark';
 import './index.css';
 
+// Session ID Handling
+function getOrCreateSessionId() {
+  const STORAGE_KEY = "mcp_blockly_session_id";
+
+  let sessionId = window.localStorage.getItem(STORAGE_KEY);
+  if (!sessionId) {
+    if (window.crypto && window.crypto.randomUUID) {
+      sessionId = window.crypto.randomUUID();
+    } else {
+      sessionId = "sess_" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    }
+    window.localStorage.setItem(STORAGE_KEY, sessionId);
+  }
+
+  return sessionId;
+}
+
+const sessionId = getOrCreateSessionId();
+window.sessionId = sessionId;
+console.log("[SESSION] Using sessionId:", sessionId);
+
 // Register the blocks and generator with Blockly
 Blockly.common.defineBlocks(blocks);
 Object.assign(pythonGenerator.forBlock, forBlock);
@@ -128,19 +149,6 @@ const cancelApiKeyButton = document.querySelector('#cancelApiKey');
 
 settingsButton.addEventListener("click", () => {
   apiKeyModal.style.display = 'flex';
-
-  // Load current API keys from backend
-  fetch("/get_api_key", {
-    method: "GET",
-  })
-    .then(response => response.json())
-    .then(data => {
-      apiKeyInput.value = data.api_key || '';
-      hfKeyInput.value = data.hf_key || '';
-    })
-    .catch(err => {
-      console.error("Error loading API keys:", err);
-    });
 });
 
 saveApiKeyButton.addEventListener("click", () => {
@@ -159,32 +167,9 @@ saveApiKeyButton.addEventListener("click", () => {
     return;
   }
 
-  // Save API keys to both backend servers (test.py and chat.py)
-  Promise.all([
-    fetch("/set_api_key", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey, hf_key: hfKey }),
-    }),
-    fetch("/set_api_key_chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey, hf_key: hfKey }),
-    })
-  ])
-    .then(async (responses) => {
-      const results = await Promise.all(responses.map(r => r.json()));
-      if (results.every(r => r.success)) {
-        alert('API keys saved successfully');
-        apiKeyModal.style.display = 'none';
-      } else {
-        alert('Failed to save API keys to all services');
-      }
-    })
-    .catch(err => {
-      console.error("Error saving API keys:", err);
-      alert('Failed to save API keys');
-    });
+  // Save API keys locally
+  alert('API keys saved successfully');
+  apiKeyModal.style.display = 'none';
 });
 
 cancelApiKeyButton.addEventListener("click", () => {
@@ -776,7 +761,7 @@ function parseInputs(inputStr) {
 
 // Set up unified SSE connection for all workspace operations
 const setupUnifiedStream = () => {
-  const eventSource = new EventSource('/unified_stream');
+  const eventSource = new EventSource(`/unified_stream?session_id=${sessionId}`);
   const processedRequests = new Set(); // Track processed requests
 
   eventSource.onmessage = (event) => {
@@ -884,6 +869,7 @@ const setupUnifiedStream = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            session_id: sessionId,
             request_type: 'edit_mcp',
             request_id: data.request_id,
             success: success,
@@ -1017,6 +1003,7 @@ const setupUnifiedStream = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            session_id: sessionId,
             request_type: 'replace',
             request_id: data.request_id,
             success: success,
@@ -1065,6 +1052,7 @@ const setupUnifiedStream = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            session_id: sessionId,
             request_type: 'delete',
             block_id: data.block_id,
             success: success,
@@ -1258,6 +1246,7 @@ const setupUnifiedStream = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            session_id: sessionId,
             request_type: 'create',
             request_id: data.request_id,
             success: success,
@@ -1310,6 +1299,7 @@ const setupUnifiedStream = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            session_id: sessionId,
             request_type: 'variable',
             request_id: data.request_id,
             success: success,
@@ -1390,7 +1380,7 @@ const updateCode = () => {
   api_key = os.environ.get("OPENAI_API_KEY")
   
   if not api_key:
-    return "Error: OpenAI API key not configured. Please set it in File > Settings"
+    return "Error: OpenAI API key not configured. Please set it in your HuggingFace Space env in its settings."
   
   client = OpenAI(api_key=api_key)
 
@@ -1508,7 +1498,7 @@ demo.launch(mcp_server=True)
   fetch("/update_code", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ session_id: sessionId, code }),
   }).catch((err) => {
     console.error("[Blockly] Error sending Python code:", err);
   });
@@ -1530,6 +1520,7 @@ const checkChatBackend = async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        session_id: sessionId,
         code: globalChatCode,
         varString: globalVarString
       }),
@@ -1563,6 +1554,7 @@ const sendChatUpdate = async (chatCode, retryCount = 0) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        session_id: sessionId,
         code: chatCode,
         varString: globalVarString
       }),

@@ -16,11 +16,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-latest_blockly_code = ""
-stored_api_key = ""  # Store the OpenAI API key in memory
-stored_hf_key = ""  # Store the Hugging Face API key in memory
-
-
 # Gets REAL Python code, not the LLM DSL
 @app.post("/update_code")
 async def update_code(request: Request):
@@ -35,58 +30,10 @@ async def get_latest_code():
     global latest_blockly_code
     return {"code": latest_blockly_code}
 
-@app.get("/get_api_key")
-async def get_api_key_endpoint():
-    global stored_api_key, stored_hf_key
-    api_key = stored_api_key or os.environ.get("OPENAI_API_KEY", "")
-    hf_key = stored_hf_key or os.environ.get("HUGGINGFACE_API_KEY", "")
-    
-    # Mask the API keys for security (show only first 7 and last 4 characters)
-    if api_key and len(api_key) > 15:
-        masked_api_key = api_key[:7] + '...' + api_key[-4:]
-    else:
-        masked_api_key = api_key if api_key else ""
-    
-    if hf_key and len(hf_key) > 15:
-        masked_hf_key = hf_key[:7] + '...' + hf_key[-4:]
-    else:
-        masked_hf_key = hf_key if hf_key else ""
-    
-    return {"api_key": masked_api_key, "hf_key": masked_hf_key}
-
-@app.post("/set_api_key")
-async def set_api_key_endpoint(request: Request):
-    global stored_api_key, stored_hf_key
-    data = await request.json()
-    api_key = data.get("api_key", "").strip()
-    hf_key = data.get("hf_key", "").strip()
-    
-    try:
-        # Store in memory and set environment variables
-        if api_key:
-            stored_api_key = api_key
-            os.environ["OPENAI_API_KEY"] = api_key
-            print(f"[API KEY] Set OPENAI_API_KEY in environment")
-        
-        if hf_key:
-            stored_hf_key = hf_key
-            os.environ["HUGGINGFACE_API_KEY"] = hf_key
-            print(f"[HF KEY] Set HUGGINGFACE_API_KEY in environment")
-        
-        return {"success": True}
-    except Exception as e:
-        print(f"Error setting API keys: {e}")
-        return {"success": False, "error": str(e)}
-
-
 def execute_blockly_logic(user_inputs):
     global latest_blockly_code, stored_api_key
     if not latest_blockly_code.strip():
         return "No Blockly code available"
-
-    # Ensure API key is set in environment before executing
-    if stored_api_key:
-        os.environ["OPENAI_API_KEY"] = stored_api_key
 
     result = ""
 

@@ -30,13 +30,10 @@ app.add_middleware(
 async def update_chat_route(request: Request):
     return await chat.update_chat(request)
 
-@app.post("/set_api_key_chat")
-async def set_api_key_chat_route(request: Request):
-    return await chat.set_api_key_chat(request)
-
 @app.get("/unified_stream")
-async def unified_stream_route():
-    return await chat.unified_stream()
+async def unified_stream_route(request: Request):
+    session_id = request.query_params.get("session_id")
+    return await chat.unified_stream(session_id=session_id)
 
 @app.post("/request_result")
 async def request_result_route(request: Request):
@@ -51,14 +48,6 @@ async def update_code_route(request: Request):
 @app.get("/get_latest_code")
 async def get_latest_code_route():
     return await test.get_latest_code()
-
-@app.get("/get_api_key")
-async def get_api_key_route():
-    return await test.get_api_key_endpoint()
-
-@app.post("/set_api_key")
-async def set_api_key_route(request: Request):
-    return await test.set_api_key_endpoint(request)
 
 # Serve built frontend WITHOUT shadowing Gradio paths
 from fastapi.responses import FileResponse

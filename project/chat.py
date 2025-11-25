@@ -13,44 +13,23 @@ import uuid
 import time
 from colorama import Fore, Style
 from huggingface_hub import HfApi
+from collections import defaultdict
 
 # Initialize OpenAI client (will be updated when API key is set)
 client = None
 
-# Store API keys in memory for this process
-stored_api_key = ""
-stored_hf_key = ""
+# Per-session queues for all block operation requests (Py -> JS)
+requests_queues = defaultdict(queue.Queue)
 
-# Global variable to store the latest chat context
-latest_blockly_chat_code = ""
+# Per-session queues for all request results from frontend (JS -> Py)
+results_queues = defaultdict(queue.Queue)
 
-# Global variable to store the workspace's variables
-latest_blockly_vars = ""
-
-# Unified queue for all block operation requests (Py -> JS)
-requests_queue = queue.Queue()
-
-# Unified queue for all request results from frontend (JS -> Py)
-results_queue = queue.Queue()
-
-# Helper function to wait for a result from the unified queue
-def wait_for_result(request_id, request_type, timeout=8, id_field='request_id'):
-    """
-    Wait for a result from the unified results_queue.
-    Matches results by request_id and request_type.
-    
-    Args:
-        request_id: Identifier for the request (UUID or block_id)
-        request_type: Type of request ('delete', 'create', 'variable', 'edit_mcp', 'replace')
-        timeout: Maximum time to wait in seconds
-        id_field: Field name to match against (default 'request_id', use 'block_id' for delete)
-        
-    Returns:
-        Result dict if found and successful, raises exception otherwise
-    """
+# Helper function to wait for a result from the per-session queue
+def wait_for_result(request_id, request_type, session_id, timeout=8, id_field='request_id'):
     start_time = time.time()
     check_interval = 0.05
     results_buffer = []  # Buffer for results we read but don't match
+    queue = results_queues[session_id]
     
     while time.time() - start_time < timeout:
         # Check if we have buffered results that match
@@ -62,13 +41,13 @@ def wait_for_result(request_id, request_type, timeout=8, id_field='request_id'):
         
         # Try to get a new result from queue
         try:
-            result = results_queue.get_nowait()
+            result = queue.get_nowait()
             # Check if this is our result
             if (result.get(id_field) == request_id and 
                 result.get('request_type') == request_type):
                 # Put back any buffered results we collected
                 for buffered in results_buffer:
-                    results_queue.put(buffered)
+                    queue.put(buffered)
                 results_buffer = []
                 return result
             else:
@@ -81,19 +60,9 @@ def wait_for_result(request_id, request_type, timeout=8, id_field='request_id'):
     
     # Timeout - put back any buffered results
     for buffered in results_buffer:
-        results_queue.put(buffered)
+        queue.put(buffered)
     
     raise TimeoutError(f"No response received for {request_type} request {request_id} after {timeout} seconds")
-
-# Global variable to store the deployed HF MCP server URL
-current_mcp_server_url = None
-
-# Global variable to track if a deployment just happened
-deployment_just_happened = False
-deployment_message = ""
-
-# Track if first MCP output block creation attempt has happened in this conversation
-first_output_block_attempted = False
 
 blocks_context = ""
 try:
@@ -123,38 +92,18 @@ async def update_chat(request: Request):
     latest_blockly_vars = data.get("varString", "")
     return {"code": latest_blockly_chat_code}
 
-@app.post("/set_api_key_chat")
-async def set_api_key_chat(request: Request):
-    global stored_api_key, stored_hf_key
-    data = await request.json()
-    api_key = data.get("api_key", "").strip()
-    hf_key = data.get("hf_key", "").strip()
-    
-    # Store in memory and set environment variables for this process
-    if api_key:
-        stored_api_key = api_key
-        os.environ["OPENAI_API_KEY"] = api_key
-        print(f"[CHAT API KEY] Set OPENAI_API_KEY in chat.py environment")
-    
-    if hf_key:
-        stored_hf_key = hf_key
-        os.environ["HUGGINGFACE_API_KEY"] = hf_key
-        print(f"[CHAT HF KEY] Set HUGGINGFACE_API_KEY in chat.py environment")
-    
-    return {"success": True}
-
-def delete_block(block_id):
+def delete_block(block_id, session_id):
     try:
         print(f"[DELETE REQUEST] Attempting to delete block: {block_id}")
         
         # Add to unified requests queue
         delete_data = {"type": "delete", "block_id": block_id}
-        requests_queue.put(delete_data)
+        requests_queues[session_id].put(delete_data)
         print(f"[DELETE REQUEST] Added to queue: {block_id}")
         
         # Wait for result from unified queue (delete uses 'block_id' as the identifier field)
         try:
-            result = wait_for_result(block_id, "delete", timeout=8, id_field='block_id')
+            result = wait_for_result(block_id, "delete", session_id, timeout=8, id_field='block_id')
             print(f"[DELETE RESULT] Received result for {block_id}: success={result.get('success')}, error={result.get('error')}")
             if result["success"]:
                 return f"[TOOL] Successfully deleted block {block_id}"
@@ -170,7 +119,7 @@ def delete_block(block_id):
         traceback.print_exc()
         return f"Error deleting block: {str(e)}"
 
-def create_block(block_spec, blockID=None, placement_type=None, input_name=None):
+def create_block(block_spec, blockID=None, placement_type=None, input_name=None, session_id=None):
     try:
         # Generate a unique request ID
         request_id = str(uuid.uuid4())
@@ -183,11 +132,11 @@ def create_block(block_spec, blockID=None, placement_type=None, input_name=None)
             queue_data["placement_type"] = placement_type
         if input_name:
             queue_data["input_name"] = input_name
-        requests_queue.put(queue_data)
+        requests_queues[session_id].put(queue_data)
         
         # Wait for result from unified queue
         try:
-            result = wait_for_result(request_id, "create", timeout=8)
+            result = wait_for_result(request_id, "create", session_id, timeout=8)
             if result["success"]:
                 return f"[TOOL] Successfully created block: {result.get('block_id', 'unknown')}"
             else:
@@ -203,7 +152,7 @@ def create_block(block_spec, blockID=None, placement_type=None, input_name=None)
         traceback.print_exc()
         return f"Error creating block: {str(e)}"
 
-def create_variable(var_name):
+def create_variable(var_name, session_id):
     try:
         print(f"[VARIABLE REQUEST] Attempting to create variable: {var_name}")
         
@@ -212,12 +161,12 @@ def create_variable(var_name):
         
         # Add to variable creation queue
         queue_data = {"type": "variable", "request_id": request_id, "variable_name": var_name}
-        requests_queue.put(queue_data)
+        requests_queues[session_id].put(queue_data)
         print(f"[VARIABLE REQUEST] Added to queue with ID: {request_id}")
         
         # Wait for result from unified queue
         try:
-            result = wait_for_result(request_id, "variable", timeout=8)
+            result = wait_for_result(request_id, "variable", session_id, timeout=8)
             print(f"[VARIABLE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
             if result["success"]:
                 return f"[TOOL] Successfully created variable: {result.get('variable_id', var_name)}"
@@ -233,7 +182,7 @@ def create_variable(var_name):
         traceback.print_exc()
         return f"Error creating variable: {str(e)}"
 
-def edit_mcp(inputs=None, outputs=None):
+def edit_mcp(inputs=None, outputs=None, session_id=None):
     try:
         print(f"[EDIT MCP REQUEST] Attempting to edit MCP block: inputs={inputs}, outputs={outputs}")
         
@@ -248,12 +197,12 @@ def edit_mcp(inputs=None, outputs=None):
             edit_data["outputs"] = outputs
         
         # Add to edit MCP queue
-        requests_queue.put(edit_data)
+        requests_queues[session_id].put(edit_data)
         print(f"[EDIT MCP REQUEST] Added to queue with ID: {request_id}")
         
         # Wait for result from unified queue
         try:
-            result = wait_for_result(request_id, "edit_mcp", timeout=8)
+            result = wait_for_result(request_id, "edit_mcp", session_id, timeout=8)
             print(f"[EDIT MCP RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
             if result["success"]:
                 return f"[TOOL] Successfully edited MCP block inputs/outputs"
@@ -269,7 +218,7 @@ def edit_mcp(inputs=None, outputs=None):
         traceback.print_exc()
         return f"Error editing MCP block: {str(e)}"
 
-def replace_block(block_id, command):
+def replace_block(block_id, command, session_id):
     try:
         print(f"[REPLACE REQUEST] Attempting to replace block {block_id} with: {command}")
         
@@ -280,12 +229,12 @@ def replace_block(block_id, command):
         replace_data = {"type": "replace", "request_id": request_id, "block_id": block_id, "block_spec": command}
         
         # Add to replace block queue
-        requests_queue.put(replace_data)
+        requests_queues[session_id].put(replace_data)
         print(f"[REPLACE REQUEST] Added to queue with ID: {request_id}")
         
         # Wait for result from unified queue
         try:
-            result = wait_for_result(request_id, "replace", timeout=8)
+            result = wait_for_result(request_id, "replace", session_id, timeout=8)
             print(f"[REPLACE RESULT] Received result for {request_id}: success={result.get('success')}, error={result.get('error')}")
             if result["success"]:
                 return f"[TOOL] Successfully replaced block {block_id}"
@@ -303,7 +252,10 @@ def replace_block(block_id, command):
 
 # Unified Server-Sent Events endpoint for all workspace operations
 @app.get("/unified_stream")
-async def unified_stream():
+async def unified_stream(session_id: str = None):
+    if session_id:
+        print(f"[UNIFIED STREAM] Connected with session_id: {session_id}")
+    
     async def clear_sent_request(sent_requests, request_key, delay):
         """Clear request_key from sent_requests after delay seconds"""
         await asyncio.sleep(delay)
@@ -317,8 +269,8 @@ async def unified_stream():
         while True:
             try:
                 # Check unified requests queue (no elif - checks every iteration)
-                if not requests_queue.empty():
-                    request = requests_queue.get_nowait()
+                if not requests_queues[session_id].empty():
+                    request = requests_queues[session_id].get_nowait()
                     request_type = request.get("type")
                     
                     # Build request key for duplicate detection
@@ -363,13 +315,17 @@ async def unified_stream():
 
 # Unified Server-Sent Events endpoint for all results from frontend
 @app.get("/results_stream")
-async def results_stream():
+async def results_stream(session_id: str = None):
+    if session_id:
+        print(f"[RESULTS STREAM] Connected with session_id: {session_id}")
+    
     async def event_generator():
+        queue = results_queues[session_id]
         while True:
             try:
                 # Check if there are any results to send
-                if not results_queue.empty():
-                    result_data = results_queue.get_nowait()
+                if not queue.empty():
+                    result_data = queue.get_nowait()
                     yield f"data: {json.dumps(result_data)}\n\n"
                 else:
                     # Send a heartbeat every 30 seconds to keep connection alive
@@ -395,27 +351,28 @@ async def results_stream():
 async def request_result(request: Request):
     data = await request.json()
     request_type = data.get("request_type")
+    session_id = data.get("session_id")
     
     # Log based on type
     if request_type == "delete":
         block_id = data.get("block_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, block_id={block_id}, success={success}, error={error}")
+        print(f"[RESULT RECEIVED] type={request_type}, block_id={block_id}, success={success}, error={error}, session_id={session_id}")
     elif request_type == "variable":
         request_id = data.get("request_id")
         variable_id = data.get("variable_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}, variable_id={variable_id}")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}, variable_id={variable_id}, session_id={session_id}")
     elif request_type in ("create", "replace", "edit_mcp"):
         request_id = data.get("request_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}, session_id={session_id}")
     
-    # Put directly in unified results queue
-    results_queue.put(data)
+    # Put directly in per-session results queue
+    results_queues[session_id].put(data)
     
     return {"received": True}
 
@@ -915,9 +872,6 @@ def create_gradio_interface():
         
         # Reset output block tracking for this conversation turn
         first_output_block_attempted = False
-        
-        # Use stored key or environment key
-        api_key = stored_api_key or os.environ.get("OPENAI_API_KEY")
         
         if api_key and (not client or (hasattr(client, 'api_key') and client.api_key != api_key)):
             try:
