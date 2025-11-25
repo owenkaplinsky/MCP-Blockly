@@ -2,6 +2,10 @@
 
 MCP Blockly is a visual programming environment for building real MCP servers without dealing with Python syntax or configuration. It brings the clarity of block-based logic into AI development, allowing newcomers and experienced builders alike to design, test, and refine MCP tools through a clean drag-and-connect workflow. Every block you place generates runnable Python code instantly, so you can focus on structure and behavior while the system manages the boilerplate.
 
+## YouTube Video (click on image)
+
+[![Video Thumbnail](thumbnail.png)](https://www.youtube.com/watch?v=5oj-2uIZpb0)
+
 ## What This Does
 
 MCP Blockly lets you build Model Context Protocol (MCP) servers using a block-based interface, perfect for students and newcomers stepping into AI development. The core building happens on the visual canvas. You define your MCP inputs, arrange your logic with blocks, and choose what your server will return. Every change you make is reflected in live Python code on the side. The generator handles function signatures and MCP boilerplate automatically, so you never have to worry about syntax or configuration. Everything stays valid and synchronized.
@@ -29,9 +33,8 @@ The File menu handles creating new projects, opening existing ones, and download
 
 The system has two optional but recommended API keys:
 
-**OpenAI API Key**: Enables the AI Assistant: your guide through the learning process. The assistant helps you build blocks, fix mistakes, explain concepts, and explore MCP development interactively. Without it, you can still create and test blocks manually.
-
-**Hugging Face API Key**: Allows you to deploy your MCP as a real, live server on Hugging Face Spaces. This is a practical way to learn how AI tools work in production. The system creates a new Space and uploads your tool automatically. The Space becomes a real MCP server that other AI systems can connect to and call natively. Without it, you can build and test locally but won't be able to deploy unless you manually create a space and upload the generated `app.py` file.
+- **OpenAI API Key**: Enables the AI Assistant: your guide through the learning process. The assistant helps you build blocks, fix mistakes, explain concepts, and explore MCP development interactively. Without it, you can still create and test blocks manually.
+- **Hugging Face API Key**: Allows you to deploy your MCP as a real, live server on Hugging Face Spaces. This is a practical way to learn how AI tools work in production. The system creates a new Space and uploads your tool automatically. The Space becomes a real MCP server that other AI systems can connect to and call natively. Without it, you can build and test locally but won't be able to deploy unless you manually create a space and upload the generated `app.py` file.
 
 Set these keys through Settings before using features that depend on them. Both are optional: you can build and test tools without either key, but certain features won't be available.
 
