@@ -1,10 +1,15 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import os
 import ast
 import inspect
 import pandas as pd
+import multiprocessing
+import time
+from collections import defaultdict
+import uuid
+import logging
 
 app = FastAPI()
 
@@ -16,29 +21,140 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Per-session storage for the latest Blockly-generated code
+latest_blockly_code = defaultdict(str)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("test_app")
+
+# ---------------------------------------------------------------------------
+# Session helpers
+# ---------------------------------------------------------------------------
+
+def require_session_id(data_or_query):
+    """
+    Ensure every request carries a session_id; otherwise reject.
+    """
+    session_id = None
+    if isinstance(data_or_query, dict):
+        session_id = data_or_query.get("session_id")
+    else:
+        session_id = data_or_query
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    return session_id
+
+
+# ---------------------------------------------------------------------------
+# Safe execution helpers (protect against infinite loops and crashes)
+# ---------------------------------------------------------------------------
+
+def _worker_exec(code_str, inputs, queue, openai_key=None, hf_key=None):
+    """
+    Execute user-generated code in an isolated process.
+    Returns output through a queue to avoid sharing state.
+    """
+    try:
+        # Inject keys into environment for this process only (not persisted outside)
+        if openai_key:
+            os.environ["OPENAI_API_KEY"] = openai_key
+        if hf_key:
+            os.environ["HF_TOKEN"] = hf_key
+
+        result = ""
+
+        def capture_result(msg):
+            nonlocal result
+            result = msg
+
+        # Execution environment
+        env = {
+            "reply": capture_result,
+            "__builtins__": __builtins__,
+        }
+
+        # Minimal imports that Blockly outputs may rely on
+        exec("import os\nimport pandas as pd\nimport ast\nimport inspect", env)
+
+        exec(code_str, env)
+        if "create_mcp" in env:
+            sig = inspect.signature(env["create_mcp"])
+            params = list(sig.parameters.values())
+
+            typed_args = []
+            for i, arg in enumerate(inputs):
+                if i >= len(params):
+                    break
+                if arg is None or arg == "":
+                    typed_args.append(None)
+                    continue
+
+                anno = params[i].annotation
+                try:
+                    if anno == int:
+                        typed_args.append(int(arg))
+                    elif anno == float:
+                        typed_args.append(float(arg))
+                    elif anno == bool:
+                        typed_args.append(bool(arg) if isinstance(arg, bool) else str(arg).lower() in ("true", "1"))
+                    elif anno == list:
+                        try:
+                            typed_args.append(ast.literal_eval(arg))
+                        except Exception:
+                            typed_args.append([arg])
+                    elif anno == str or anno == inspect._empty:
+                        typed_args.append(str(arg))
+                    else:
+                        typed_args.append(arg)
+                except Exception:
+                    typed_args.append(arg)
+
+            if len(typed_args) > 0 and isinstance(typed_args[0], list):
+                typed_args[0] = pd.DataFrame(typed_args[0])
+
+            result = env["create_mcp"](*typed_args)
+        elif "process_input" in env:
+            env["process_input"](inputs)
+
+        queue.put({"ok": True, "result": result if result not in (None, "") else "No output generated"})
+    except Exception as e:
+        queue.put({"ok": False, "result": f"Error: {str(e)}"})
+
+
+# ---------------------------------------------------------------------------
+# API endpoints
+# ---------------------------------------------------------------------------
+
 # Gets REAL Python code, not the LLM DSL
 @app.post("/update_code")
 async def update_code(request: Request):
-    global latest_blockly_code
     data = await request.json()
-    latest_blockly_code = data.get("code", "")
+    session_id = require_session_id(data)
+    latest_blockly_code[session_id] = data.get("code", "")
+    logger.info(f"[update_code] Stored code for session {session_id}; length={len(latest_blockly_code[session_id])}")
     return {"ok": True}
 
 # Sends the latest code to chat.py so that the agent will be able to use the MCP
 @app.get("/get_latest_code")
-async def get_latest_code():
-    global latest_blockly_code
-    return {"code": latest_blockly_code}
+async def get_latest_code(request: Request):
+    session_id = require_session_id(dict(session_id=request.query_params.get("session_id")))
+    logger.info(f"[get_latest_code] Returning code for session {session_id}; length={len(latest_blockly_code.get(session_id, ''))}")
+    return {"code": latest_blockly_code.get(session_id, "")}
 
-def execute_blockly_logic(user_inputs):
-    global latest_blockly_code, stored_api_key
-    if not latest_blockly_code.strip():
+def execute_blockly_logic(user_inputs, session_id, openai_key=None, hf_key=None):
+    """
+    Execute the Blockly-generated code for a specific session in an isolated, timed subprocess.
+    """
+    if not session_id:
+        return "No session_id provided to execute code."
+    logger.info(f"[execute_blockly_logic] session={session_id}; inputs={user_inputs}")
+    code_for_session = latest_blockly_code.get(session_id, "")
+    if not code_for_session.strip():
         return "No Blockly code available"
 
-    result = ""
-
-    # More comprehensive filtering of Gradio-related code
-    lines = latest_blockly_code.split('\n')
+    # Strip Gradio scaffolding before execution
+    lines = code_for_session.split('\n')
     filtered_lines = []
     skip_mode = False
     in_demo_block = False
@@ -69,90 +185,52 @@ def execute_blockly_logic(user_inputs):
             filtered_lines.append(line)
     
     code_to_run = '\n'.join(filtered_lines)
+    # Launch in isolated subprocess
+    q = multiprocessing.Queue()
+    p = multiprocessing.Process(target=_worker_exec, args=(code_to_run, user_inputs, q, openai_key, hf_key), daemon=True)
+    p.start()
+    p.join(timeout=8)
 
-    def capture_result(msg):
-        nonlocal result
-        result = msg
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        logger.error(f"[execute_blockly_logic] timeout for session {session_id}")
+        return "Error: Execution timed out"
 
-    # Set up the environment with necessary imports that might be needed
-    env = {
-        "reply": capture_result,
-        "__builtins__": __builtins__,
-    }
+    if q.empty():
+        return "No output generated"
 
-    try:
-        # Import any required modules in the execution environment
-        exec("import os", env)
-        exec(code_to_run, env)
-        if "create_mcp" in env:
-            sig = inspect.signature(env["create_mcp"])
-            params = list(sig.parameters.values())
-
-            typed_args = []
-            for i, arg in enumerate(user_inputs):
-                if i >= len(params):
-                    break
-                if arg is None or arg == "":
-                    typed_args.append(None)
-                    continue
-
-                anno = params[i].annotation
-                try:
-                    if anno == int:
-                        typed_args.append(int(arg))
-                    elif anno == float:
-                        typed_args.append(float(arg))
-                    elif anno == bool:
-                        # Handle boolean conversion from string (checkbox in Gradio sends True/False)
-                        if isinstance(arg, bool):
-                            typed_args.append(arg)
-                        else:
-                            typed_args.append(str(arg).lower() in ("true", "1"))
-                    elif anno == list:
-                        try:
-                            # Convert string like '["a", "b", "c"]' into an actual list
-                            typed_args.append(ast.literal_eval(arg))
-                        except Exception:
-                            # If parsing fails, wrap it as a single-item list
-                            typed_args.append([arg])
-                    elif anno == str or anno == inspect._empty:
-                        typed_args.append(str(arg))
-                    else:
-                        # Handle remaining type cases
-                        typed_args.append(arg)
-                except ValueError:
-                    # If type conversion fails, try to coerce intelligently
-                    if anno == float:
-                        try:
-                            typed_args.append(float(arg))
-                        except Exception:
-                            typed_args.append(arg)
-                    elif anno == int:
-                        try:
-                            typed_args.append(int(float(arg)))  # Allow "3.5" to become 3
-                        except Exception:
-                            typed_args.append(arg)
-                    else:
-                        typed_args.append(arg)
-                except Exception:
-                    # If conversion fails, pass the raw input
-                    typed_args.append(arg)
-
-            if len(typed_args) > 0 and isinstance(typed_args[0], list):
-                typed_args[0] = pd.DataFrame(typed_args[0])
-
-            result = env["create_mcp"](*typed_args)
-        elif "process_input" in env:
-            env["process_input"](user_inputs)
-    except Exception as e:
-        print("[EXECUTION ERROR]", e)
-        result = f"Error: {str(e)}"
-
-    return result if result is not None and result != "" else "No output generated"
+    msg = q.get()
+    return msg.get("result", "No output generated")
 
 
 def build_interface():
     with gr.Blocks(title="Test MCP Server") as demo:
+        session_state = gr.State()
+
+        def init_session(req: gr.Request):
+            sid = None
+            q_sid = None
+            c_sid = None
+            try:
+                q_sid = req.query_params.get("session_id")
+            except Exception:
+                q_sid = None
+            try:
+                c_sid = req.cookies.get("mcp_blockly_session_id")
+            except Exception:
+                c_sid = None
+
+            sid = q_sid or c_sid
+            logger.info(
+                f"[init_session] query_sid={q_sid}, cookie_sid={c_sid}, chosen={sid}"
+            )
+            if not sid:
+                logger.error("Gradio test interface loaded without session_id (neither query param nor cookie); refresh/process will be no-ops.")
+            return sid
+
+        demo.load(init_session, inputs=None, outputs=[session_state], queue=False)
+
         # Create a fixed number of potential input fields (max 10)
         input_fields = []
         input_labels = []
@@ -176,13 +254,17 @@ def build_interface():
             submit_btn = gr.Button("Test")
             refresh_btn = gr.Button("Refresh")
 
-        def refresh_inputs():
-            global latest_blockly_code
+        def refresh_inputs(session_id):
+            if not session_id:
+                logger.error("refresh_inputs called without session_id; no data will be returned.")
+                return [gr.update(visible=False, value="") for _ in input_fields + output_fields]
             import re
+            code_str = latest_blockly_code.get(session_id, "")
+            logger.info(f"[refresh_inputs] session={session_id}; code length={len(code_str)}")
 
             # Look for the create_mcp function definition
             pattern = r'def create_mcp\((.*?)\):'
-            match = re.search(pattern, latest_blockly_code)
+            match = re.search(pattern, code_str)
 
             params = []
             if match:
@@ -216,10 +298,10 @@ def build_interface():
                             })
 
             # Detect output count (out_amt = N)
-            out_amt_match = re.search(r'out_amt\s*=\s*(\d+)', latest_blockly_code)
+            out_amt_match = re.search(r'out_amt\s*=\s*(\d+)', code_str)
             out_amt = int(out_amt_match.group(1)) if out_amt_match else 0
 
-            out_names_match = re.search(r'out_names\s*=\s*(\[.*?\])', latest_blockly_code, re.DOTALL)
+            out_names_match = re.search(r'out_names\s*=\s*(\[.*?\])', code_str, re.DOTALL)
             if out_names_match:
                 try:
                     out_names = ast.literal_eval(out_names_match.group(1))
@@ -228,7 +310,7 @@ def build_interface():
             else:
                 out_names = []
 
-            out_types_match = re.search(r'out_types\s*=\s*(\[.*?\])', latest_blockly_code, re.DOTALL)
+            out_types_match = re.search(r'out_types\s*=\s*(\[.*?\])', code_str, re.DOTALL)
             if out_types_match:
                 try:
                     out_types = ast.literal_eval(out_types_match.group(1))
@@ -274,12 +356,24 @@ def build_interface():
 
             return updates + output_updates
 
-        def process_input(*args):
-            result = execute_blockly_logic(args)
+        def process_input(*args, request: gr.Request = None):
+            *inputs, session_id = args
+            if not session_id:
+                logger.error("process_input called without session_id; aborting.")
+                return [""] * 10
+
+            openai_key = None
+            hf_key = None
+            if request:
+                openai_key = request.headers.get("x-openai-key") or request.cookies.get("mcp_openai_key")
+                hf_key = request.headers.get("x-hf-key") or request.cookies.get("mcp_hf_key")
+
+            result = execute_blockly_logic(inputs, session_id, openai_key=openai_key, hf_key=hf_key)
 
             # Get output types to determine how to format the result
             import re
-            out_types_match = re.search(r'out_types\s*=\s*(\[.*?\])', latest_blockly_code, re.DOTALL)
+            code_str = latest_blockly_code.get(session_id, "")
+            out_types_match = re.search(r'out_types\s*=\s*(\[.*?\])', code_str, re.DOTALL)
             out_types = []
             if out_types_match:
                 try:
@@ -312,13 +406,14 @@ def build_interface():
         # When refresh is clicked, update input field visibility and labels
         refresh_btn.click(
             refresh_inputs,
+            inputs=[session_state],
             outputs=input_fields + output_fields,
             queue=False
         )
         
         submit_btn.click(
             process_input,
-            inputs=input_fields,
+            inputs=input_fields + [session_state],
             outputs=output_fields,
             queue=False
         )

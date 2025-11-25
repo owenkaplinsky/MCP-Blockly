@@ -29,6 +29,8 @@ function getOrCreateSessionId() {
 const sessionId = getOrCreateSessionId();
 window.sessionId = sessionId;
 console.log("[SESSION] Using sessionId:", sessionId);
+// Share session id with other mounted apps (e.g., Gradio tester) via cookie
+document.cookie = `mcp_blockly_session_id=${sessionId}; path=/; SameSite=Lax`;
 
 // Register the blocks and generator with Blockly
 Blockly.common.defineBlocks(blocks);
@@ -147,7 +149,18 @@ const hfKeyInput = document.querySelector('#hfKeyInput');
 const saveApiKeyButton = document.querySelector('#saveApiKey');
 const cancelApiKeyButton = document.querySelector('#cancelApiKey');
 
+const OPENAI_KEY_STORAGE = "mcp_blockly_openai_key";
+const HF_KEY_STORAGE = "mcp_blockly_hf_key";
+
+const loadStoredKeys = () => {
+  const storedOpenAI = window.localStorage.getItem(OPENAI_KEY_STORAGE) || "";
+  const storedHF = window.localStorage.getItem(HF_KEY_STORAGE) || "";
+  apiKeyInput.value = storedOpenAI;
+  hfKeyInput.value = storedHF;
+};
+
 settingsButton.addEventListener("click", () => {
+  loadStoredKeys();
   apiKeyModal.style.display = 'flex';
 });
 
@@ -168,6 +181,22 @@ saveApiKeyButton.addEventListener("click", () => {
   }
 
   // Save API keys locally
+  window.localStorage.setItem(OPENAI_KEY_STORAGE, apiKey);
+  window.localStorage.setItem(HF_KEY_STORAGE, hfKey);
+
+  // Share keys with backend via cookies (per-request, not stored server-side)
+  const cookieOpts = "path=/; SameSite=Lax";
+  if (apiKey) {
+    document.cookie = `mcp_openai_key=${encodeURIComponent(apiKey)}; ${cookieOpts}`;
+  } else {
+    document.cookie = `mcp_openai_key=; Max-Age=0; ${cookieOpts}`;
+  }
+  if (hfKey) {
+    document.cookie = `mcp_hf_key=${encodeURIComponent(hfKey)}; ${cookieOpts}`;
+  } else {
+    document.cookie = `mcp_hf_key=; Max-Age=0; ${cookieOpts}`;
+  }
+
   alert('API keys saved successfully');
   apiKeyModal.style.display = 'none';
 });

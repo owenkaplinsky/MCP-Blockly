@@ -1,7 +1,7 @@
 import os
 import re
 import requests
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
@@ -14,9 +14,11 @@ import time
 from colorama import Fore, Style
 from huggingface_hub import HfApi
 from collections import defaultdict
+from typing import Dict, Any
 
-# Initialize OpenAI client (will be updated when API key is set)
-client = None
+# ---------------------------------------------------------------------------
+# Session-local stores (no shared global state across users)
+# ---------------------------------------------------------------------------
 
 # Per-session queues for all block operation requests (Py -> JS)
 requests_queues = defaultdict(queue.Queue)
@@ -24,8 +26,48 @@ requests_queues = defaultdict(queue.Queue)
 # Per-session queues for all request results from frontend (JS -> Py)
 results_queues = defaultdict(queue.Queue)
 
+# Per-session latest Blockly chat code + variables
+session_chat_state: Dict[str, Dict[str, str]] = defaultdict(lambda: {"code": "", "vars": ""})
+
+# Per-session deployment status
+session_deploy_state: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+    "current_mcp_server_url": None,
+    "deployment_just_happened": False,
+    "deployment_message": None,
+})
+
+# Default placeholders to avoid accidental global reuse of secrets
+api_key = None
+client = None
+first_output_block_attempted = False
+
+
+def require_session_id(data_or_query) -> str:
+    """
+    Ensure every request carries a session_id; otherwise reject.
+    """
+    session_id = None
+    if isinstance(data_or_query, dict):
+        session_id = data_or_query.get("session_id")
+    else:
+        session_id = data_or_query
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    return session_id
+
+
+def redact_secrets(text: str) -> str:
+    """
+    Best-effort redaction of obvious API key formats before logging.
+    """
+    if not text:
+        return text
+    return re.sub(r"(sk-[A-Za-z0-9]{20,})", "***", re.sub(r"(hf_[A-Za-z0-9]{20,})", "***", text))
+
 # Helper function to wait for a result from the per-session queue
 def wait_for_result(request_id, request_type, session_id, timeout=8, id_field='request_id'):
+    session_id = require_session_id(session_id)
     start_time = time.time()
     check_interval = 0.05
     results_buffer = []  # Buffer for results we read but don't match
@@ -86,14 +128,16 @@ app.add_middleware(
 
 @app.post("/update_chat")
 async def update_chat(request: Request):
-    global latest_blockly_chat_code, latest_blockly_vars
     data = await request.json()
-    latest_blockly_chat_code = data.get("code", "")
-    latest_blockly_vars = data.get("varString", "")
-    return {"code": latest_blockly_chat_code}
+    session_id = require_session_id(data)
+    session_chat_state[session_id]["code"] = data.get("code", "")
+    session_chat_state[session_id]["vars"] = data.get("varString", "")
+    return {"code": session_chat_state[session_id]["code"]}
+
 
 def delete_block(block_id, session_id):
     try:
+        session_id = require_session_id(session_id)
         print(f"[DELETE REQUEST] Attempting to delete block: {block_id}")
         
         # Add to unified requests queue
@@ -121,6 +165,7 @@ def delete_block(block_id, session_id):
 
 def create_block(block_spec, blockID=None, placement_type=None, input_name=None, session_id=None):
     try:
+        session_id = require_session_id(session_id)
         # Generate a unique request ID
         request_id = str(uuid.uuid4())
         
@@ -154,6 +199,7 @@ def create_block(block_spec, blockID=None, placement_type=None, input_name=None,
 
 def create_variable(var_name, session_id):
     try:
+        session_id = require_session_id(session_id)
         print(f"[VARIABLE REQUEST] Attempting to create variable: {var_name}")
         
         # Generate a unique request ID
@@ -184,6 +230,7 @@ def create_variable(var_name, session_id):
 
 def edit_mcp(inputs=None, outputs=None, session_id=None):
     try:
+        session_id = require_session_id(session_id)
         print(f"[EDIT MCP REQUEST] Attempting to edit MCP block: inputs={inputs}, outputs={outputs}")
         
         # Generate a unique request ID
@@ -220,6 +267,7 @@ def edit_mcp(inputs=None, outputs=None, session_id=None):
 
 def replace_block(block_id, command, session_id):
     try:
+        session_id = require_session_id(session_id)
         print(f"[REPLACE REQUEST] Attempting to replace block {block_id} with: {command}")
         
         # Generate a unique request ID
@@ -253,8 +301,8 @@ def replace_block(block_id, command, session_id):
 # Unified Server-Sent Events endpoint for all workspace operations
 @app.get("/unified_stream")
 async def unified_stream(session_id: str = None):
-    if session_id:
-        print(f"[UNIFIED STREAM] Connected with session_id: {session_id}")
+    session_id = require_session_id(session_id)
+    print(f"[UNIFIED STREAM] Connected with session_id: {session_id}")
     
     async def clear_sent_request(sent_requests, request_key, delay):
         """Clear request_key from sent_requests after delay seconds"""
@@ -316,8 +364,8 @@ async def unified_stream(session_id: str = None):
 # Unified Server-Sent Events endpoint for all results from frontend
 @app.get("/results_stream")
 async def results_stream(session_id: str = None):
-    if session_id:
-        print(f"[RESULTS STREAM] Connected with session_id: {session_id}")
+    session_id = require_session_id(session_id)
+    print(f"[RESULTS STREAM] Connected with session_id: {session_id}")
     
     async def event_generator():
         queue = results_queues[session_id]
@@ -351,36 +399,35 @@ async def results_stream(session_id: str = None):
 async def request_result(request: Request):
     data = await request.json()
     request_type = data.get("request_type")
-    session_id = data.get("session_id")
+    session_id = require_session_id(data)
     
     # Log based on type
     if request_type == "delete":
         block_id = data.get("block_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, block_id={block_id}, success={success}, error={error}, session_id={session_id}")
+        print(f"[RESULT RECEIVED] type={request_type}, block_id={block_id}, success={success}, error={redact_secrets(str(error))}, session_id={session_id}")
     elif request_type == "variable":
         request_id = data.get("request_id")
         variable_id = data.get("variable_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}, variable_id={variable_id}, session_id={session_id}")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={redact_secrets(str(error))}, variable_id={variable_id}, session_id={session_id}")
     elif request_type in ("create", "replace", "edit_mcp"):
         request_id = data.get("request_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={error}, session_id={session_id}")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={redact_secrets(str(error))}, session_id={session_id}")
     
     # Put directly in per-session results queue
     results_queues[session_id].put(data)
     
     return {"received": True}
 
-def deploy_to_huggingface(space_name):
-    global stored_hf_key
-    
-    if not stored_hf_key:
-        return "[DEPLOY ERROR] No Hugging Face API key configured. Please set it in File > Keys."
+def deploy_to_huggingface(space_name, hf_token=None, session_id=None):
+    session_id = require_session_id(session_id)
+    if not hf_token:
+        return "[DEPLOY ERROR] No Hugging Face API key provided. Please set it in File > Keys."
     
     try:
         from huggingface_hub import HfApi
@@ -388,7 +435,7 @@ def deploy_to_huggingface(space_name):
         return "[DEPLOY ERROR] huggingface_hub not installed. Run: pip install huggingface_hub"
     
     try:
-        api = HfApi(token=stored_hf_key)
+        api = HfApi(token=hf_token)
         
         # Get username from token
         user_info = api.whoami()
@@ -410,7 +457,11 @@ def deploy_to_huggingface(space_name):
         # Get the actual generated Python code from test.py (not the Blockly DSL)
         python_code = ""
         try:
-            resp = requests.get(f"http://127.0.0.1:{os.getenv('PORT', 8080)}/get_latest_code")
+            resp = requests.get(
+                f"http://127.0.0.1:{os.getenv('PORT', 8080)}/get_latest_code",
+                params={"session_id": session_id},
+                timeout=5,
+            )
             if resp.ok:
                 python_code = resp.json().get("code", "")
         except Exception as e:
@@ -470,12 +521,13 @@ The tool has been automatically deployed to Hugging Face Spaces and is ready to 
         space_url = f"https://huggingface.co/spaces/{repo_id}"
         print(f"[DEPLOY SUCCESS] Space deployed: {space_url}")
         
-        # Store the MCP server URL globally for native MCP support
-        global current_mcp_server_url, deployment_just_happened, deployment_message
-        current_mcp_server_url = space_url
-        deployment_just_happened = True
-        deployment_message = f"Your MCP tool is being built on Hugging Face Spaces. This usually takes 1-2 minutes. Once it's ready, you'll be able to use the MCP tools defined in your blocks."
-        print(f"[MCP] Registered MCP server: {current_mcp_server_url}")
+        # Store the MCP server URL per session for native MCP support
+        session_deploy_state[session_id]["current_mcp_server_url"] = space_url
+        session_deploy_state[session_id]["deployment_just_happened"] = True
+        session_deploy_state[session_id]["deployment_message"] = (
+            "Your MCP tool is being built on Hugging Face Spaces. This usually takes 1-2 minutes. Once it's ready, you'll be able to use the MCP tools defined in your blocks."
+        )
+        print(f"[MCP] Registered MCP server (session {session_id}): {space_url}")
         
         return f"[TOOL] Successfully deployed to Hugging Face Space!\n\n**Space URL:** {space_url}"
         
@@ -866,29 +918,50 @@ def create_gradio_interface():
         },
     ]
     
-    def chat_with_context(message, history):
-        # Check if API key is set and create/update client
-        global client, stored_api_key, first_output_block_attempted
-        
+    def chat_with_context(message, history, request: gr.Request = None, session_id=None, openai_key=None, hf_token=None):
+        """
+        Chat handler. Keys are supplied per request (openai_key/hf_token) and are not stored.
+        session_id is required for isolation; if omitted, a per-call UUID is used to avoid cross-talk.
+        """
+        global client
+        # Resolve session_id from explicit arg, query, or cookie (no other fallback)
+        if request:
+            if not session_id:
+                try:
+                    session_id = request.query_params.get("session_id")
+                except Exception:
+                    session_id = None
+            if not session_id:
+                try:
+                    session_id = request.cookies.get("mcp_blockly_session_id")
+                except Exception:
+                    session_id = None
+
+        session_id = require_session_id(session_id)
+
         # Reset output block tracking for this conversation turn
         first_output_block_attempted = False
-        
-        if api_key and (not client or (hasattr(client, 'api_key') and client.api_key != api_key)):
-            try:
-                client = OpenAI(api_key=api_key)
-            except Exception as e:
-                yield f"Error initializing OpenAI client: {str(e)}"
-                return
-        
-        if not client or not api_key:
-            yield "OpenAI API key not configured. Please set it in File > Settings in the Blockly interface."
+
+        # Resolve keys from request headers/cookies only (never stored)
+        if request and not openai_key:
+            openai_key = request.headers.get("x-openai-key") or request.cookies.get("mcp_openai_key")
+        if request and not hf_token:
+            hf_token = request.headers.get("x-hf-key") or request.cookies.get("mcp_hf_key")
+
+        if not openai_key:
+            yield "OpenAI API key not configured. Please set it in File > Keys in the Blockly interface."
             return
-        
-        # Get chat context
-        global latest_blockly_chat_code
-        context = latest_blockly_chat_code
-        global latest_blockly_vars
-        vars = latest_blockly_vars
+
+        # Create a throwaway client per call (no caching of secrets)
+        try:
+            client = OpenAI(api_key=openai_key)
+        except Exception as e:
+            yield f"Error initializing OpenAI client: {str(e)}"
+            return
+
+        # Get chat context (session-local)
+        context = session_chat_state.get(session_id, {}).get("code", "")
+        vars = session_chat_state.get(session_id, {}).get("vars", "")
         
         # Convert history to OpenAI format
         input_items = []
@@ -926,8 +999,9 @@ def create_gradio_interface():
                 dynamic_tools = tools.copy() if tools else []
                 
                 # Inject MCP tool if a server is registered
-                global current_mcp_server_url, deployment_just_happened, deployment_message
                 space_building_status = None  # Track if space is building
+                deploy_state = session_deploy_state[session_id]
+                current_mcp_server_url = deploy_state.get("current_mcp_server_url")
                 if current_mcp_server_url:
                     mcp_injection_successful = False
                     try:
@@ -946,7 +1020,7 @@ def create_gradio_interface():
                                 if runtime_info and runtime_info.stage == "RUNNING":
                                     space_is_running = True
                                     # Space is running - deployment is complete
-                                    deployment_just_happened = False
+                                    deploy_state["deployment_just_happened"] = False
                                     print(f"[MCP] Space is RUNNING")
                                 else:
                                     # Space is not running - it's likely building
@@ -979,8 +1053,8 @@ def create_gradio_interface():
                 
                 # Add deployment status message to instructions if deployment just happened and space is not running
                 deployment_instructions = instructions
-                if deployment_just_happened and space_building_status and space_building_status != "RUNNING":
-                    deployment_instructions = instructions + f"\n\n**MCP DEPLOYMENT STATUS:** {deployment_message}"
+                if deploy_state.get("deployment_just_happened") and space_building_status and space_building_status != "RUNNING":
+                    deployment_instructions = instructions + f"\n\n**MCP DEPLOYMENT STATUS:** {deploy_state.get('deployment_message')}"
                 
                 # Create Responses API call
                 response = client.responses.create(
@@ -1042,7 +1116,7 @@ def create_gradio_interface():
                         if function_name == "delete_block":
                             block_id = function_args.get("id", "")
                             print(Fore.YELLOW + f"Agent deleted block with ID `{block_id}`." + Style.RESET_ALL)
-                            tool_result = delete_block(block_id)
+                            tool_result = delete_block(block_id, session_id=session_id)
                             result_label = "Delete Operation"
                         
                         elif function_name == "create_block":
@@ -1133,27 +1207,27 @@ def create_gradio_interface():
                         elif function_name == "create_variable":
                             name = function_args.get("name", "")
                             print(Fore.YELLOW + f"Agent created variable with name `{name}`." + Style.RESET_ALL)
-                            tool_result = create_variable(name)
+                            tool_result = create_variable(name, session_id=session_id)
                             result_label = "Create Var Operation"
                         
                         elif function_name == "edit_mcp":
                             inputs = function_args.get("inputs", None)
                             outputs = function_args.get("outputs", None)
                             print(Fore.YELLOW + f"Agent editing MCP block: inputs={inputs}, outputs={outputs}." + Style.RESET_ALL)
-                            tool_result = edit_mcp(inputs, outputs)
+                            tool_result = edit_mcp(inputs, outputs, session_id=session_id)
                             result_label = "Edit MCP Operation"
                         
                         elif function_name == "replace_block":
                             block_id = function_args.get("block_id", "")
                             command = function_args.get("command", "")
                             print(Fore.YELLOW + f"Agent replacing block with ID `{block_id}` with command `{command}`." + Style.RESET_ALL)
-                            tool_result = replace_block(block_id, command)
+                            tool_result = replace_block(block_id, command, session_id=session_id)
                             result_label = "Replace Block Operation"
                         
                         elif function_name == "deploy_to_huggingface":
                             space_name = function_args.get("space_name", "")
                             print(Fore.YELLOW + f"Agent deploying to Hugging Face Space `{space_name}`." + Style.RESET_ALL)
-                            tool_result = deploy_to_huggingface(space_name)
+                            tool_result = deploy_to_huggingface(space_name, hf_token=hf_token, session_id=session_id)
                             result_label = "Deployment Result"
                         
                         # SHOW TOOL RESULT IMMEDIATELY
