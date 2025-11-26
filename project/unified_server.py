@@ -5,13 +5,17 @@ import gradio as gr
 import uvicorn
 import os
 import sys
+import logging
 
 # Ensure local modules are importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test
 import chat
 
-app = FastAPI()
+app = FastAPI(
+    # Respect Hugging Face Spaces reverse proxy path/prefix when present
+    root_path=os.environ.get("SPACE_ROOT_PATH", "")
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,8 +36,15 @@ async def update_chat_route(request: Request):
 
 @app.get("/unified_stream")
 async def unified_stream_route(request: Request):
-    session_id = request.query_params.get("session_id")
-    return await chat.unified_stream(session_id=session_id)
+    # Diagnostics: log what we see at the unified server layer
+    q_sid = request.query_params.get("session_id")
+    c_sid = request.cookies.get("mcp_blockly_session_id")
+    hdr_sid = request.headers.get("x-session-id") or request.headers.get("session-id")
+    root_path = request.scope.get("root_path")
+    logging.getLogger("unified_server").info(
+        f"[unified_stream_route] query_sid={q_sid}, cookie_sid={c_sid}, header_sid={hdr_sid}, root_path={root_path}"
+    )
+    return await chat.unified_stream(session_id=q_sid, request=request)
 
 @app.post("/request_result")
 async def request_result_route(request: Request):
@@ -83,4 +94,12 @@ if __name__ == "__main__":
     print(f"[UNIFIED] running on http://127.0.0.1:{port}")
     print(f"- /gradio-test")
     print(f"- /gradio-chat")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="critical")
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="critical",
+        # Tell Uvicorn to trust proxy headers so scheme becomes https on HF Spaces
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )

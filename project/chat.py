@@ -12,6 +12,7 @@ import json
 import uuid
 import time
 from colorama import Fore, Style
+import logging
 from huggingface_hub import HfApi
 from collections import defaultdict
 from typing import Dict, Any
@@ -71,7 +72,7 @@ def wait_for_result(request_id, request_type, session_id, timeout=8, id_field='r
     start_time = time.time()
     check_interval = 0.05
     results_buffer = []  # Buffer for results we read but don't match
-    queue = results_queues[session_id]
+    results_queue = results_queues[session_id]
     
     while time.time() - start_time < timeout:
         # Check if we have buffered results that match
@@ -83,13 +84,13 @@ def wait_for_result(request_id, request_type, session_id, timeout=8, id_field='r
         
         # Try to get a new result from queue
         try:
-            result = queue.get_nowait()
+            result = results_queue.get_nowait()
             # Check if this is our result
             if (result.get(id_field) == request_id and 
                 result.get('request_type') == request_type):
                 # Put back any buffered results we collected
                 for buffered in results_buffer:
-                    queue.put(buffered)
+                    results_queue.put(buffered)
                 results_buffer = []
                 return result
             else:
@@ -102,7 +103,7 @@ def wait_for_result(request_id, request_type, session_id, timeout=8, id_field='r
     
     # Timeout - put back any buffered results
     for buffered in results_buffer:
-        queue.put(buffered)
+        results_queue.put(buffered)
     
     raise TimeoutError(f"No response received for {request_type} request {request_id} after {timeout} seconds")
 
@@ -300,9 +301,28 @@ def replace_block(block_id, command, session_id):
 
 # Unified Server-Sent Events endpoint for all workspace operations
 @app.get("/unified_stream")
-async def unified_stream(session_id: str = None):
-    session_id = require_session_id(session_id)
-    print(f"[UNIFIED STREAM] Connected with session_id: {session_id}")
+async def unified_stream(session_id: str = None, request: Request = None):
+    # Diagnostics before enforcing session
+    q_sid = None
+    c_sid = None
+    hdr_sid = None
+    root_path = None
+    try:
+        if request:
+            q_sid = request.query_params.get("session_id")
+            c_sid = request.cookies.get("mcp_blockly_session_id")
+            hdr_sid = request.headers.get("x-session-id") or request.headers.get("session-id")
+            root_path = request.scope.get("root_path")
+    except Exception:
+        pass
+
+    # Prefer the explicit argument but log everything we saw
+    logging.getLogger("chat_unified_stream").info(
+        f"[unified_stream] arg_sid={session_id}, query_sid={q_sid}, cookie_sid={c_sid}, header_sid={hdr_sid}, root_path={root_path}"
+    )
+
+    session_id = require_session_id(session_id or q_sid or c_sid or hdr_sid)
+    print("[UNIFIED STREAM] Client connected")
     
     async def clear_sent_request(sent_requests, request_key, delay):
         """Clear request_key from sent_requests after delay seconds"""
@@ -365,15 +385,15 @@ async def unified_stream(session_id: str = None):
 @app.get("/results_stream")
 async def results_stream(session_id: str = None):
     session_id = require_session_id(session_id)
-    print(f"[RESULTS STREAM] Connected with session_id: {session_id}")
+    print("[RESULTS STREAM] Client connected")
     
     async def event_generator():
-        queue = results_queues[session_id]
+        results_queue = results_queues[session_id]
         while True:
             try:
                 # Check if there are any results to send
-                if not queue.empty():
-                    result_data = queue.get_nowait()
+                if not results_queue.empty():
+                    result_data = results_queue.get_nowait()
                     yield f"data: {json.dumps(result_data)}\n\n"
                 else:
                     # Send a heartbeat every 30 seconds to keep connection alive
@@ -406,18 +426,18 @@ async def request_result(request: Request):
         block_id = data.get("block_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, block_id={block_id}, success={success}, error={redact_secrets(str(error))}, session_id={session_id}")
+        print(f"[RESULT RECEIVED] type={request_type}, block_id={block_id}, success={success}, error={redact_secrets(str(error))}")
     elif request_type == "variable":
         request_id = data.get("request_id")
         variable_id = data.get("variable_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={redact_secrets(str(error))}, variable_id={variable_id}, session_id={session_id}")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={redact_secrets(str(error))}, variable_id={variable_id}")
     elif request_type in ("create", "replace", "edit_mcp"):
         request_id = data.get("request_id")
         success = data.get("success")
         error = data.get("error")
-        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={redact_secrets(str(error))}, session_id={session_id}")
+        print(f"[RESULT RECEIVED] type={request_type}, request_id={request_id}, success={success}, error={redact_secrets(str(error))}")
     
     # Put directly in per-session results queue
     results_queues[session_id].put(data)
@@ -527,7 +547,7 @@ The tool has been automatically deployed to Hugging Face Spaces and is ready to 
         session_deploy_state[session_id]["deployment_message"] = (
             "Your MCP tool is being built on Hugging Face Spaces. This usually takes 1-2 minutes. Once it's ready, you'll be able to use the MCP tools defined in your blocks."
         )
-        print(f"[MCP] Registered MCP server (session {session_id}): {space_url}")
+        print(f"[MCP] Registered MCP server at {space_url}")
         
         return f"[TOOL] Successfully deployed to Hugging Face Space!\n\n**Space URL:** {space_url}"
         
@@ -963,11 +983,44 @@ def create_gradio_interface():
         context = session_chat_state.get(session_id, {}).get("code", "")
         vars = session_chat_state.get(session_id, {}).get("vars", "")
         
-        # Convert history to OpenAI format
+        # Convert history (supports legacy tuples and newer ChatMessage/dict formats)
         input_items = []
-        for human, ai in history:
-            input_items.append({"role": "user", "content": human})
-            input_items.append({"role": "assistant", "content": ai})
+        if history:
+            for item in history:
+                # Gradio 6 ChatMessage-like objects (duck-typed)
+                if hasattr(item, "role") and hasattr(item, "content"):
+                    # item.content is a list of parts; flatten text parts
+                    texts = []
+                    for part in item.content or []:
+                        if isinstance(part, dict) and "text" in part:
+                            texts.append(part["text"])
+                        else:
+                            texts.append(getattr(part, "text", str(part)))
+                    content = "\n".join(t for t in texts if t)
+                    if content:
+                        input_items.append({"role": item.role, "content": content})
+                    continue
+
+                # Gradio serialized dict form
+                if isinstance(item, dict) and "role" in item and "content" in item:
+                    texts = []
+                    for part in item.get("content") or []:
+                        if isinstance(part, dict) and "text" in part:
+                            texts.append(part["text"])
+                        else:
+                            texts.append(str(part))
+                    content = "\n".join(t for t in texts if t)
+                    if content:
+                        input_items.append({"role": item["role"], "content": content})
+                    continue
+
+                    # Legacy tuple/list (user, assistant)
+                if isinstance(item, (tuple, list)) and len(item) >= 2:
+                    human, ai = item[0], item[1]
+                    if human:
+                        input_items.append({"role": "user", "content": human})
+                    if ai:
+                        input_items.append({"role": "assistant", "content": ai})
         
         # Build instructions
         instructions = SYSTEM_PROMPT
@@ -1186,7 +1239,6 @@ def create_gradio_interface():
                                         placement_type == "input" and 
                                         input_name and 
                                         input_name.startswith("R")):
-                                        is_first_output_attempt = True
                                         # Mark that we've attempted an output block in this conversation
                                         first_output_block_attempted = True
                                         # Return warning instead of creating the block
@@ -1201,7 +1253,7 @@ def create_gradio_interface():
                                             print(Fore.YELLOW + f"Agent created block with command `{command}`, type: {placement_type}, blockID: `{blockID}`." + Style.RESET_ALL)
                                         if input_name:
                                             print(Fore.YELLOW + f"  Input name: {input_name}" + Style.RESET_ALL)
-                                        tool_result = create_block(command, blockID, placement_type, input_name)
+                                        tool_result = create_block(command, blockID, placement_type, input_name, session_id=session_id)
                                         result_label = "Create Operation"
                         
                         elif function_name == "create_variable":

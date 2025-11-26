@@ -9,6 +9,22 @@ import '@blockly/toolbox-search';
 import DarkTheme from '@blockly/theme-dark';
 import './index.css';
 
+// Determine the correct base path when running behind HF proxy (/proxy/... or /spaces/...)
+const getBasePath = () => {
+  const p = window.location.pathname || "";
+  if (p.startsWith("/proxy/")) {
+    const parts = p.split("/").filter(Boolean); // proxy/owner/space[/...]
+    return "/" + parts.slice(0, 3).join("/");
+  }
+  if (p.startsWith("/spaces/")) {
+    const parts = p.split("/").filter(Boolean); // spaces/owner/space[/...]
+    return "/" + parts.slice(0, 3).join("/");
+  }
+  return "";
+};
+
+const basePath = getBasePath();
+
 // Session ID Handling
 function getOrCreateSessionId() {
   const STORAGE_KEY = "mcp_blockly_session_id";
@@ -30,7 +46,30 @@ const sessionId = getOrCreateSessionId();
 window.sessionId = sessionId;
 console.log("[SESSION] Using sessionId:", sessionId);
 // Share session id with other mounted apps (e.g., Gradio tester) via cookie
-document.cookie = `mcp_blockly_session_id=${sessionId}; path=/; SameSite=Lax`;
+const sameSite = window.location.protocol === "https:" ? "None" : "Lax";
+const secure = window.location.protocol === "https:" ? "; Secure" : "";
+const maxAge = 60 * 60 * 24 * 7; // one week
+document.cookie = `mcp_blockly_session_id=${sessionId}; path=/; Max-Age=${maxAge}; SameSite=${sameSite}${secure}`;
+
+// Ensure embedded Gradio iframes receive the session id even when third-party cookies are blocked
+function attachSessionToIframes() {
+  const frames = [
+    document.getElementById("gradioTestFrame"),
+    document.getElementById("gradioChatFrame"),
+  ];
+
+  frames.forEach((frame) => {
+    if (!frame) return;
+    const baseSrc = frame.dataset.baseSrc || frame.getAttribute("src") || "";
+    if (!baseSrc) return;
+    // Prefix proxy base when iframe src is absolute-from-root
+    const resolvedBaseSrc = baseSrc.startsWith("/") ? `${basePath}${baseSrc}` : baseSrc;
+    const joiner = baseSrc.includes("?") ? "&" : "?";
+    frame.src = `${resolvedBaseSrc}${joiner}session_id=${encodeURIComponent(sessionId)}`;
+  });
+}
+
+attachSessionToIframes();
 
 // Register the blocks and generator with Blockly
 Blockly.common.defineBlocks(blocks);
@@ -185,7 +224,7 @@ saveApiKeyButton.addEventListener("click", () => {
   window.localStorage.setItem(HF_KEY_STORAGE, hfKey);
 
   // Share keys with backend via cookies (per-request, not stored server-side)
-  const cookieOpts = "path=/; SameSite=Lax";
+  const cookieOpts = "path=/; SameSite=None; Secure";
   if (apiKey) {
     document.cookie = `mcp_openai_key=${encodeURIComponent(apiKey)}; ${cookieOpts}`;
   } else {
@@ -790,7 +829,9 @@ function parseInputs(inputStr) {
 
 // Set up unified SSE connection for all workspace operations
 const setupUnifiedStream = () => {
-  const eventSource = new EventSource(`/unified_stream?session_id=${sessionId}`);
+  const esUrl = `${basePath}/unified_stream?session_id=${sessionId}`;
+  console.log("[SSE] Opening unified_stream", esUrl);
+  const eventSource = new EventSource(esUrl);
   const processedRequests = new Set(); // Track processed requests
 
   eventSource.onmessage = (event) => {
@@ -894,7 +935,7 @@ const setupUnifiedStream = () => {
 
         // Send result back to backend immediately
         console.log('[SSE] Sending edit MCP result:', { request_id: data.request_id, success, error });
-        fetch('/request_result', {
+        fetch(`${basePath}/request_result`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1028,7 +1069,7 @@ const setupUnifiedStream = () => {
 
         // Send result back to backend
         console.log('[SSE] Sending replace block result:', { request_id: data.request_id, success, error, block_id: blockId });
-        fetch('/request_result', {
+        fetch(`${basePath}/request_result`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1077,7 +1118,7 @@ const setupUnifiedStream = () => {
 
         // Send result back to backend immediately
         console.log('[SSE] Sending deletion result:', { block_id: data.block_id, success, error });
-        fetch('/request_result', {
+        fetch(`${basePath}/request_result`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1271,7 +1312,7 @@ const setupUnifiedStream = () => {
           block_id: blockId
         });
 
-        fetch('/request_result', {
+        fetch(`${basePath}/request_result`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1324,7 +1365,7 @@ const setupUnifiedStream = () => {
           variable_id: variableId
         });
 
-        fetch('/request_result', {
+        fetch(`${basePath}/request_result`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1524,7 +1565,7 @@ demo.launch(mcp_server=True)
     codeEl.textContent = code;
   }
 
-  fetch("/update_code", {
+  fetch(`${basePath}/update_code`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, code }),
@@ -1545,7 +1586,7 @@ let globalVarString = '';
 // Function to check if chat backend is available
 const checkChatBackend = async () => {
   try {
-    const response = await fetch("/update_chat", {
+    const response = await fetch(`${basePath}/update_chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1579,7 +1620,7 @@ const processChatUpdateQueue = () => {
 // Send chat update with retry logic
 const sendChatUpdate = async (chatCode, retryCount = 0) => {
   try {
-    const response = await fetch("/update_chat", {
+    const response = await fetch(`${basePath}/update_chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

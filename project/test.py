@@ -132,14 +132,14 @@ async def update_code(request: Request):
     data = await request.json()
     session_id = require_session_id(data)
     latest_blockly_code[session_id] = data.get("code", "")
-    logger.info(f"[update_code] Stored code for session {session_id}; length={len(latest_blockly_code[session_id])}")
+    logger.info(f"[update_code] Stored code; length={len(latest_blockly_code[session_id])}")
     return {"ok": True}
 
 # Sends the latest code to chat.py so that the agent will be able to use the MCP
 @app.get("/get_latest_code")
 async def get_latest_code(request: Request):
     session_id = require_session_id(dict(session_id=request.query_params.get("session_id")))
-    logger.info(f"[get_latest_code] Returning code for session {session_id}; length={len(latest_blockly_code.get(session_id, ''))}")
+    logger.info(f"[get_latest_code] Returning code; length={len(latest_blockly_code.get(session_id, ''))}")
     return {"code": latest_blockly_code.get(session_id, "")}
 
 def execute_blockly_logic(user_inputs, session_id, openai_key=None, hf_key=None):
@@ -148,7 +148,7 @@ def execute_blockly_logic(user_inputs, session_id, openai_key=None, hf_key=None)
     """
     if not session_id:
         return "No session_id provided to execute code."
-    logger.info(f"[execute_blockly_logic] session={session_id}; inputs={user_inputs}")
+    logger.info(f"[execute_blockly_logic] executing; inputs={user_inputs}")
     code_for_session = latest_blockly_code.get(session_id, "")
     if not code_for_session.strip():
         return "No Blockly code available"
@@ -194,7 +194,7 @@ def execute_blockly_logic(user_inputs, session_id, openai_key=None, hf_key=None)
     if p.is_alive():
         p.terminate()
         p.join()
-        logger.error(f"[execute_blockly_logic] timeout for session {session_id}")
+        logger.error("[execute_blockly_logic] timeout")
         return "Error: Execution timed out"
 
     if q.empty():
@@ -222,14 +222,16 @@ def build_interface():
                 c_sid = None
 
             sid = q_sid or c_sid
-            logger.info(
-                f"[init_session] query_sid={q_sid}, cookie_sid={c_sid}, chosen={sid}"
-            )
+            logger.info("[init_session] session resolved")
             if not sid:
                 logger.error("Gradio test interface loaded without session_id (neither query param nor cookie); refresh/process will be no-ops.")
             return sid
 
         demo.load(init_session, inputs=None, outputs=[session_state], queue=False)
+
+        def hide_all_fields():
+            # Hide everything after initial mount so they don't flash visible
+            return [gr.update(visible=False, value="") for _ in input_fields + output_fields]
 
         # Create a fixed number of potential input fields (max 10)
         input_fields = []
@@ -239,7 +241,8 @@ def build_interface():
         with gr.Accordion("MCP Inputs", open=True):
             for i in range(10):
                 # Create inputs that can be shown/hidden
-                txt = gr.Textbox(label=f"Input {i+1}", visible=False)
+                # Gradio 6 lazy-renders hidden components; start visible so they mount, then hide via refresh updates
+                txt = gr.Textbox(label=f"Input {i+1}", visible=True)
                 input_fields.append(txt)
                 input_group_items.append(txt)
 
@@ -247,7 +250,8 @@ def build_interface():
         
         with gr.Accordion("MCP Outputs", open=True):
             for i in range(10):
-                out = gr.Textbox(label=f"Output {i+1}", visible=False, interactive=False)
+                # Start visible to force mount; refresh updates will hide/show appropriately
+                out = gr.Textbox(label=f"Output {i+1}", visible=True, interactive=False)
                 output_fields.append(out)
         
         with gr.Row():
@@ -260,11 +264,12 @@ def build_interface():
                 return [gr.update(visible=False, value="") for _ in input_fields + output_fields]
             import re
             code_str = latest_blockly_code.get(session_id, "")
-            logger.info(f"[refresh_inputs] session={session_id}; code length={len(code_str)}")
+            logger.info(f"[refresh_inputs] code length={len(code_str)}")
 
             # Look for the create_mcp function definition
-            pattern = r'def create_mcp\((.*?)\):'
-            match = re.search(pattern, code_str)
+            # Allow multiline function signatures
+            pattern = r'def\s+create_mcp\s*\((.*?)\)\s*:'
+            match = re.search(pattern, code_str, re.DOTALL)
 
             params = []
             if match:
@@ -415,6 +420,14 @@ def build_interface():
             process_input,
             inputs=input_fields + [session_state],
             outputs=output_fields,
+            queue=False
+        )
+
+        # After mount, hide all fields so they don't stay visible until refreshed
+        demo.load(
+            hide_all_fields,
+            inputs=None,
+            outputs=input_fields + output_fields,
             queue=False
         )
 

@@ -59,14 +59,24 @@
       </div>
       <div id="developmentTab" class="tabContent active">
         <div id="chatContainer">
-          <iframe src="/gradio-test" style="width: 100%; height: 100%; border: none;"></iframe>
+          <iframe
+            id="gradioTestFrame"
+            data-base-src="/gradio-test"
+            src="about:blank"
+            style="width: 100%; height: 100%; border: none;"
+          ></iframe>
         </div>
         <div class="verticalResizer"></div>
         <pre id="generatedCode"><code></code></pre>
       </div>
       <div id="aichatTab" class="tabContent">
         <div id="gradioContainer">
-          <iframe src="/gradio-chat" style="width: 100%; height: 100%; border: none;"></iframe>
+          <iframe
+            id="gradioChatFrame"
+            data-base-src="/gradio-chat"
+            src="about:blank"
+            style="width: 100%; height: 100%; border: none;"
+          ></iframe>
         </div>
         <pre id="aichatCode" style="position: absolute; left: -9999px; width: 1px; height: 1px;"><code></code></pre>
       </div>
