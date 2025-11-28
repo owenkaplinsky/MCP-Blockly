@@ -558,6 +558,22 @@ The tool has been automatically deployed to Hugging Face Spaces and is ready to 
         return f"[DEPLOY ERROR] Failed to deploy: {str(e)}"
 
 def create_gradio_interface():
+    # Define suggested prompts (emoji + short label -> longer full prompt)
+    suggested_prompts = [
+        {
+            "label": "💡 Brainstorm tools",
+            "value": "I'm not sure what I should build... do you have any ideas?"
+        },
+        {
+            "label": "🐛 Debug Issue",
+            "value": "My code isn't working as expected. Why do you think that is?"
+        },
+        {
+            "label": "🚀 Deploy Now",
+            "value": "I'm ready to deploy my MCP tool to Hugging Face Spaces. Please help me deploy it so others can use it!"
+        }
+    ]
+    
     # Hardcoded system prompt
 
     SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
@@ -770,6 +786,21 @@ def create_gradio_interface():
 
     ---
 
+    ## Important info
+
+    Sometimes the user will ask questions about the environment you're in:
+    - Creating a new project, opening a project, downloading the project code (the Python), and downloading the project (the blocks) are under the file dropdown
+    - Right click on the workspace or go under edit dropdown to undo, redo, and clean up the workspace
+    - Under the examples dropdown there is a weather API and fact checker MCP demo
+    - Testing tab on the left side is for testing your MCP live with inputs and getting outputs
+    - AI Chat tab (you) is toggleable (switch between testing and ai chat)
+
+    If you don't know, just say so. But if these questions answer it, use these answers naturally.
+
+     Additionally, never suggest project ideas that use APIs.
+
+    ---
+
     ## REQUIRED PLANNING PHASE BEFORE ANY TOOL CALL
 
     Before creating or deleting any blocks, always begin with a *Planning Phase*:
@@ -805,7 +836,11 @@ def create_gradio_interface():
 
     5. Perform the actions in order without asking for approval or asking to wait for intermediate results.
     
-    6. Before stopping, you must confirm that every single output slot of the MCP block is filled. You must explicitly confirm this and if not all output slots are filled in, you must do so immediately."""
+    6. Before stopping, you must confirm that every single output slot of the MCP block is filled. You must explicitly confirm this and if not all output slots are filled in, you must do so immediately.
+    
+    ---
+    
+    When coding, NEVER try to assume or guess ANY APIs. You must have the user provide you with exact API info and tell them exactly how to get it, if you need API stuff. Don't guess, ever. Additionally, never suggest project ideas that use APIs."""
     tools = [
         {
             "type": "function",
@@ -1301,7 +1336,7 @@ def create_gradio_interface():
                     # Tell model to respond to tool result
                     current_prompt = "The tool has been executed with the result shown above. Please respond appropriately."
                     
-                    continue  # Continue the main loop
+                    continue
                 
                 else:
                     if ai_response:
@@ -1311,7 +1346,7 @@ def create_gradio_interface():
                     
                     yield accumulated_response
                     break
-                
+
             except Exception as e:
                 if accumulated_response:
                     yield f"{accumulated_response}\n\nError in iteration {current_iteration}: {str(e)}"
@@ -1325,9 +1360,11 @@ def create_gradio_interface():
             yield accumulated_response
 
 
-    # Attach to Gradio ChatInterface
+    # Attach to Gradio ChatInterface with suggested prompts
     demo = gr.ChatInterface(
         fn=chat_with_context,
+        examples=[prompt["value"] for prompt in suggested_prompts],
+        example_labels=[prompt["label"] for prompt in suggested_prompts],
     )
 
     return demo
@@ -1339,4 +1376,4 @@ def get_chat_gradio_interface():
 
 if __name__ == "__main__":
     demo = create_gradio_interface()
-    app = gr.mount_gradio_app(app, demo, path="/")
+    app = gr.mount_gradio_app(app, demo, path="/", show_error=False)

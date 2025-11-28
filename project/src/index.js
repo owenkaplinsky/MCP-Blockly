@@ -244,6 +244,99 @@ cancelApiKeyButton.addEventListener("click", () => {
   apiKeyModal.style.display = 'none';
 });
 
+// Welcome Modal Setup
+const welcomeModal = document.querySelector('#welcomeModal');
+const welcomeApiKeyInput = document.querySelector('#welcomeApiKeyInput');
+const welcomeHfKeyInput = document.querySelector('#welcomeHfKeyInput');
+const saveWelcomeApiKeyButton = document.querySelector('#saveWelcomeApiKey');
+const closeWelcomeModalButton = document.querySelector('#closeWelcomeModal');
+const dontShowWelcomeAgainCheckbox = document.querySelector('#dontShowWelcomeAgain');
+
+const WELCOME_DISMISSED_COOKIE = "mcp_blockly_welcome_dismissed";
+
+const getCookieValue = (name) => {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return null;
+};
+
+const loadWelcomeStoredKeys = () => {
+  const storedOpenAI = window.localStorage.getItem(OPENAI_KEY_STORAGE) || "";
+  const storedHF = window.localStorage.getItem(HF_KEY_STORAGE) || "";
+  welcomeApiKeyInput.value = storedOpenAI;
+  welcomeHfKeyInput.value = storedHF;
+};
+
+const showWelcomeModal = () => {
+  loadWelcomeStoredKeys();
+  dontShowWelcomeAgainCheckbox.checked = false;
+  welcomeModal.style.display = 'flex';
+};
+
+const hideWelcomeModal = () => {
+  welcomeModal.style.display = 'none';
+  if (dontShowWelcomeAgainCheckbox.checked) {
+    const maxAge = 60 * 60 * 24 * 365; // one year
+    const sameSite = window.location.protocol === "https:" ? "None" : "Lax";
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${WELCOME_DISMISSED_COOKIE}=true; path=/; Max-Age=${maxAge}; SameSite=${sameSite}${secure}`;
+  }
+};
+
+saveWelcomeApiKeyButton.addEventListener("click", () => {
+  const apiKey = welcomeApiKeyInput.value.trim();
+  const hfKey = welcomeHfKeyInput.value.trim();
+
+  // Validate OpenAI key format if provided
+  if (apiKey && (!apiKey.startsWith("sk-") || apiKey.length < 40)) {
+    alert("Invalid OpenAI API key format. Please enter a valid OpenAI API key (starts with 'sk-').");
+    return;
+  }
+
+  // Validate Hugging Face key format if provided
+  if (hfKey && (!hfKey.startsWith("hf_") || hfKey.length < 20)) {
+    alert("Invalid Hugging Face API key format. Please enter a valid Hugging Face API key (starts with 'hf_').");
+    return;
+  }
+
+  // Save API keys locally
+  window.localStorage.setItem(OPENAI_KEY_STORAGE, apiKey);
+  window.localStorage.setItem(HF_KEY_STORAGE, hfKey);
+
+  // Share keys with backend via cookies (per-request, not stored server-side)
+  const cookieOpts = "path=/; SameSite=None; Secure";
+  if (apiKey) {
+    document.cookie = `mcp_openai_key=${encodeURIComponent(apiKey)}; ${cookieOpts}`;
+  } else {
+    document.cookie = `mcp_openai_key=; Max-Age=0; ${cookieOpts}`;
+  }
+  if (hfKey) {
+    document.cookie = `mcp_hf_key=${encodeURIComponent(hfKey)}; ${cookieOpts}`;
+  } else {
+    document.cookie = `mcp_hf_key=; Max-Age=0; ${cookieOpts}`;
+  }
+
+  hideWelcomeModal();
+});
+
+closeWelcomeModalButton.addEventListener("click", () => {
+  hideWelcomeModal();
+});
+
+// Show welcome modal on first visit
+const welcomeDismissed = getCookieValue(WELCOME_DISMISSED_COOKIE);
+console.log('[Welcome] Cookie value:', welcomeDismissed);
+if (!welcomeDismissed) {
+  // Delay showing welcome to ensure page is fully loaded
+  setTimeout(() => {
+    console.log('[Welcome] Showing welcome modal');
+    showWelcomeModal();
+  }, 500);
+} else {
+  console.log('[Welcome] Welcome modal dismissed, skipping');
+}
+
 const weatherText = '{"workspaceComments":[{"height":80,"width":477,"id":"XI5[EHp-Ow+kinXf6n5y","x":52.674375,"y":-52.760000000000005,"text":"Gets temperature of location with a latitude and a longitude."}],"blocks":{"languageVersion":0,"blocks":[{"type":"create_mcp","id":")N.HEG1x]Z/,k#TeWr,S","x":50,"y":50,"deletable":false,"extraState":{"inputCount":2,"inputNames":["latitude","longitude"],"inputTypes":["string","string"],"outputCount":1,"outputNames":["output0"],"outputTypes":["string"],"toolCount":0},"inputs":{"X0":{"block":{"type":"input_reference_latitude","id":"]3mj!y}qfRt+!okheU7L","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}},"X1":{"block":{"type":"input_reference_longitude","id":"Do/{HFNGSd.!;POiKS?D","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"longitude"}}},"R0":{"block":{"type":"in_json","id":"R|j?_8s^H{l0;UZ-oQt3","inputs":{"NAME":{"block":{"type":"text","id":"@Z+@U^@8c0gQYj}La`PY","fields":{"TEXT":"temperature_2m"}}},"JSON":{"block":{"type":"in_json","id":"X=M,R1@7bRjJVZIPi[qD","inputs":{"NAME":{"block":{"type":"text","id":"OMr~`#kG$3@k`YPDHbzH","fields":{"TEXT":"current"}}},"JSON":{"block":{"type":"call_api","id":"^(.vyM.yni08S~c1EBm=","fields":{"METHOD":"GET"},"inputs":{"URL":{"shadow":{"type":"text","id":"}.T;_U_OsRS)B_y09p % { ","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"OwH9uERJPTGQG!UER#ch","inputs":{"FROM":{"shadow":{"type":"text","id":"ya05#^ 7 % UbUeXX#eDSmH","fields":{"TEXT":"{latitude}"}},"block":{"type":"text","id":"6CX#+wo9^x+vZ`LRt5ms","fields":{"TEXT":"{latitude}"}}},"TO":{"shadow":{"type":"text","id":": _ZloQuh9c-MNf-U]!k5","fields":{"TEXT":""}},"block":{"type":"input_reference_latitude","id":"?%@)3sErZ)}=#4ags#gu","extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}},"TEXT":{"shadow":{"type":"text","id":"w@zsP)m6:WjkUp,ln3$x","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"ImNPsvzD7r^+1MJ%IirV","inputs":{"FROM":{"shadow":{"type":"text","id":"%o(3rro?WLIFpmE0#MMM","fields":{"TEXT":"{longitude}"}},"block":{"type":"text","id":"`p!s8dQ7e~?0JvofyB-{","fields":{"TEXT":"{longitude}"}}},"TO":{"shadow":{"type":"text","id":"Zpql-%oJ_sdSi | r |* er | ","fields":{"TEXT":""}},"block":{"type":"input_reference_longitude","id":"WUgiJP$X + zY#f$5nhnTX","extraState":{"ownerBlockId":") N.HEG1x]Z /, k#TeWr, S"},"fields":{"VARNAME":"longitude"}}},"TEXT":{"shadow":{"type":"text","id":", (vw$o_s7P = b4P; 8]}yj","fields":{"TEXT":"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,wind_speed_10m"}}}}}}}}}}}}}}}}}}}}]}}';
 weatherButton.addEventListener("click", () => {
   try {
