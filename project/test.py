@@ -79,8 +79,10 @@ def _worker_exec(code_str, inputs, queue, openai_key=None, hf_key=None):
 
         exec(code_str, env)
         if "create_mcp" in env:
-            sig = inspect.signature(env["create_mcp"])
+            func = env["create_mcp"]
+            sig = inspect.signature(func)
             params = list(sig.parameters.values())
+            in_types = getattr(func, "in_types", [])
 
             typed_args = []
             for i, arg in enumerate(inputs):
@@ -90,23 +92,28 @@ def _worker_exec(code_str, inputs, queue, openai_key=None, hf_key=None):
                     typed_args.append(None)
                     continue
 
-                anno = params[i].annotation
+                target_type = in_types[i] if i < len(in_types) else params[i].annotation
                 try:
-                    if anno == int:
+                    if target_type in (int, "int", "integer"):
                         typed_args.append(int(arg))
-                    elif anno == float:
+                    elif target_type in (float, "float"):
                         typed_args.append(float(arg))
-                    elif anno == bool:
-                        typed_args.append(bool(arg) if isinstance(arg, bool) else str(arg).lower() in ("true", "1"))
-                    elif anno == list:
-                        try:
-                            typed_args.append(ast.literal_eval(arg))
-                        except Exception:
-                            typed_args.append([arg])
-                    elif anno == str or anno == inspect._empty:
+                    elif target_type in (bool, "bool", "boolean"):
+                        typed_args.append(bool(arg) if isinstance(arg, bool) else str(arg).lower() in ("true", "1", "yes"))
+                    elif target_type in (list, "list"):
+                        if isinstance(arg, list):
+                            typed_args.append(arg)
+                        else:
+                            try:
+                                typed_args.append(ast.literal_eval(arg))
+                            except Exception:
+                                typed_args.append([arg])
+                    elif target_type in ("any", "Any"):
+                        typed_args.append(arg)
+                    elif target_type == inspect._empty:
                         typed_args.append(str(arg))
                     else:
-                        typed_args.append(arg)
+                        typed_args.append(str(arg))
                 except Exception:
                     typed_args.append(arg)
 
@@ -266,41 +273,55 @@ def build_interface():
             code_str = latest_blockly_code.get(session_id, "")
             logger.info(f"[refresh_inputs] code length={len(code_str)}")
 
+            def normalize_type_name(type_name):
+                if not type_name:
+                    return "string"
+                if isinstance(type_name, str):
+                    type_name_lower = type_name.lower()
+                    if "int" in type_name_lower:
+                        return "integer"
+                    if "float" in type_name_lower:
+                        return "float"
+                    if "list" in type_name_lower:
+                        return "list"
+                    if "bool" in type_name_lower:
+                        return "boolean"
+                    if "any" in type_name_lower:
+                        return "any"
+                return "string"
+
             # Look for the create_mcp function definition
             # Allow multiline function signatures
             pattern = r'def\s+create_mcp\s*\((.*?)\)\s*:'
             match = re.search(pattern, code_str, re.DOTALL)
 
             params = []
+            # Prefer explicit in_types if present
+            in_types_match = re.search(r'in_types\s*=\s*(\[.*?\])', code_str, re.DOTALL)
+            in_types = []
+            if in_types_match:
+                try:
+                    in_types = ast.literal_eval(in_types_match.group(1))
+                except Exception:
+                    in_types = []
+
             if match:
                 params_str = match.group(1)
                 if params_str.strip():
                     # Parse parameters to extract names and types
-                    for param in params_str.split(','):
+                    for idx, param in enumerate(params_str.split(',')):
                         param = param.strip()
-                        if ':' in param:
-                            name, type_hint = param.split(':')
-                            type_hint = type_hint.strip()
-                            # Convert Python type hints to display names
-                            if 'int' in type_hint:
-                                display_type = 'integer'
-                            elif 'float' in type_hint:
-                                display_type = 'float'
-                            elif 'list' in type_hint:
-                                display_type = 'list'
-                            elif 'bool' in type_hint:
-                                display_type = 'boolean'
-                            else:
-                                display_type = 'string'
-                            params.append({
-                                'name': name.strip(),
-                                'type': display_type
-                            })
-                        else:
-                            params.append({
-                                'name': param,
-                                'type': 'string'
-                            })
+                        name = param.split(':')[0].strip() if param else param
+                        # Prefer in_types entry, fall back to annotation parsing
+                        display_type = normalize_type_name(in_types[idx] if idx < len(in_types) else None)
+                        if ':' in param and (not in_types or idx >= len(in_types)):
+                            _, type_hint = param.split(':')
+                            display_type = normalize_type_name(type_hint.strip())
+
+                        params.append({
+                            'name': name,
+                            'type': display_type
+                        })
 
             # Detect output count (out_amt = N)
             out_amt_match = re.search(r'out_amt\s*=\s*(\d+)', code_str)
