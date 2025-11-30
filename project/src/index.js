@@ -354,7 +354,7 @@ if (!welcomeDismissed) {
   setTimeout(() => {
     console.log('[Welcome] Showing welcome modal');
     showWelcomeModal();
-  }, 500);
+  }, 100);
 } else {
   console.log('[Welcome] Welcome modal dismissed, skipping');
 }
@@ -407,7 +407,7 @@ const tutorialContent = {
   },
   aiAssistant: {
     title: '4/5 Get AI Guidance',
-    body: 'Use the AI Assistant tab to get help with your code.'
+    body: 'After your output is generated, switch to the AI Assistant tab to chat with the integrated agent.'
   },
   send: {
     title: '5/5 Send a Message',
@@ -580,7 +580,7 @@ const loadAiAssistantTabFlash = () => {
       // After AI Assistant tab is clicked, flash the send button
       setTimeout(() => {
         loadSendButtonFlash();
-      }, 500);
+      }, 100);
     };
     aiTab.addEventListener('click', removeFlash);
   }
@@ -612,10 +612,8 @@ const loadTestButtonFlash = (testBtn, iframeDoc) => {
       testBtn.removeEventListener('click', removeFlash);
       markTutorialStepComplete('test');
       hideTutorialPopup();
-      // After Test is clicked, wait 5 seconds then flash the AI Assistant tab
-      setTimeout(() => {
-        loadAiAssistantTabFlash();
-      }, 5000);
+      // Proceed to the next step
+      loadAiAssistantTabFlash();
     };
     testBtn.addEventListener('click', removeFlash);
   }

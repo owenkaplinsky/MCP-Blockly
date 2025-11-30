@@ -271,6 +271,12 @@ def replace_block(block_id, command, session_id):
         session_id = require_session_id(session_id)
         print(f"[REPLACE REQUEST] Attempting to replace block {block_id} with: {command}")
         
+        # Check if trying to replace create_mcp block
+        if command.strip().startswith("create_mcp("):
+            error_msg = "[TOOL] Cannot replace the create_mcp block. The main MCP block cannot be replaced. You can only edit its inputs/outputs using the edit_mcp tool."
+            print(f"[REPLACE BLOCKED] Attempt to replace create_mcp block blocked: {error_msg}")
+            return error_msg
+        
         # Generate a unique request ID
         request_id = str(uuid.uuid4())
         
@@ -561,22 +567,22 @@ def create_gradio_interface():
     # Define suggested prompts (emoji + short label -> longer full prompt)
     suggested_prompts = [
         {
+            "label": "🤔 Explain features",
+            "value": "Hi! I'm new here. Can you explain what things you can do for me?"
+        },
+        {
             "label": "💡 Brainstorm tools",
             "value": "I'm not sure what I should build... do you have any ideas?"
         },
         {
             "label": "🐛 Debug Issue",
             "value": "My code isn't working as expected. Why do you think that is?"
-        },
-        {
-            "label": "🚀 Deploy Now",
-            "value": "I'm ready to deploy my MCP tool to Hugging Face Spaces. Please help me deploy it so others can use it!"
         }
     ]
     
     # Hardcoded system prompt
 
-    SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **MCP servers** using Blockly blocks.
+    SYSTEM_PROMPT = f"""You are an AI assistant that helps users build **Model Context Protocol (MCP) servers** using Blockly blocks.
 
     You'll receive the workspace state in this format:
     `↿ blockId ↾ block_name(inputs(input_name: value))`
@@ -1002,6 +1008,10 @@ def create_gradio_interface():
             openai_key = request.headers.get("x-openai-key") or request.cookies.get("mcp_openai_key")
         if request and not hf_token:
             hf_token = request.headers.get("x-hf-key") or request.cookies.get("mcp_hf_key")
+
+        # TEMPORARY FREE API KEY
+        if not openai_key:
+            openai_key = os.getenv("OPENAI_API_KEY")
 
         if not openai_key:
             yield "OpenAI API key not configured. Please set it in File > Keys in the Blockly interface."
