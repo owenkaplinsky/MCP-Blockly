@@ -4,6 +4,23 @@
 <head>
   <meta charset="utf-8" />
   <title>MCP Blockly</title>
+  <style>
+    @keyframes pulseOutline {
+      0% {
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 1);
+      }
+      75% {
+        box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+      }
+    }
+    
+    .flash-button {
+      animation: pulseOutline 1s ease-out infinite;
+    }
+  </style>
 </head>
 
 <body>
@@ -207,7 +224,6 @@
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
     <div
       style="background: white; padding: 30px; border-radius: 10px; width: 90%; max-width: 700px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; position: relative;">
-      <button id="closeWelcomeModal" style="position: absolute; top: 15px; right: 15px; background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">×</button>
       <h2 style="margin-top: 0; margin-bottom: 10px; color: #333;">Welcome to MCP Blockly</h2>
       <p style="margin: 0 0 20px 0; color: #666; font-size: 14px;">Get started with visual programming for AI tools.</p>
 
@@ -220,15 +236,17 @@
       </div>
 
       <!-- API Keys Section -->
-      <h3 style="margin-top: 25px; margin-bottom: 15px; color: #333; font-size: 16px; font-weight: 600;">Configure API Keys</h3>
-      
-      <label for="welcomeApiKeyInput"
+      <h3 style="margin-top: 25px; margin-bottom: 15px; color: #333; font-size: 16px; font-weight: 600;">🎉 Free API</h3>
+      <p style="margin: 5px 0 15px 0; color: #27ae60; font-size: 12px; font-weight: 500;">Using a free API key for OpenAI. Get started immediately!</p>
+
+      <!-- TEMPORARY FREE API KEY -->
+      <!-- <label for="welcomeApiKeyInput"
         style="display: block; margin-bottom: 10px; color: #666; font-size: 14px; font-weight: 500;">OpenAI API
         Key:</label>
       <input type="password" id="welcomeApiKeyInput"
         style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box; margin-bottom: 5px;"
         placeholder="sk-...">
-      <p style="margin: 5px 0 15px 0; color: #999; font-size: 12px;">For the AI assistant and blocks' model calls.</p>
+      <p style="margin: 5px 0 20px 0; color: #999; font-size: 12px;">For AI-powered features and code generation.</p> -->
 
       <label for="welcomeHfKeyInput"
         style="display: block; margin-bottom: 10px; color: #666; font-size: 14px; font-weight: 500;">Hugging Face API
@@ -241,12 +259,16 @@
       <p style="color: #999; font-size: 12px; margin-bottom: 20px;">Your API keys will be stored securely for this session.</p>
 
       <div style="display: flex; justify-content: flex-end; align-items: center; gap: 15px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" id="dontShowWelcomeAgain" style="cursor: pointer; width: 16px; height: 16px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
           <label for="dontShowWelcomeAgain" style="color: #666; font-size: 12px; cursor: pointer; margin: 0;">Don't show me this again</label>
+          <input type="checkbox" id="dontShowWelcomeAgain" style="cursor: pointer; width: 16px; height: 16px;">
         </div>
-        <button id="saveWelcomeApiKey"
-          style="padding: 10px 20px; background: #6366f1; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Get Started</button>
+        <div style="display: flex; gap: 10px;">
+          <button id="skipTutorialButton"
+            style="padding: 10px 20px; background: #e5e7eb; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Skip Tutorial</button>
+          <button id="saveWelcomeApiKey"
+            style="padding: 10px 20px; background: #6366f1; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Start Tutorial</button>
+        </div>
       </div>
     </div>
   </div>
@@ -257,14 +279,7 @@
     <div
       style="background: white; padding: 30px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
       <h2 style="margin-top: 0; margin-bottom: 20px; color: #333;">API Keys</h2>
-
-      <label for="apiKeyInput"
-        style="display: block; margin-bottom: 10px; color: #666; font-size: 14px; font-weight: 500;">OpenAI API
-        Key:</label>
-      <input type="password" id="apiKeyInput"
-        style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box; margin-bottom: 5px;"
-        placeholder="sk-...">
-      <p style="margin: 5px 0 15px 0; color: #999; font-size: 12px;">For the AI assistant and blocks' model calls.</p>
+      <p style="margin: 0 0 20px 0; color: #27ae60; font-size: 12px; font-weight: 500;">🎉 Using a free OpenAI API key. Only Hugging Face key needed below if deploying.</p>
 
       <label for="hfKeyInput"
         style="display: block; margin-bottom: 10px; color: #666; font-size: 14px; font-weight: 500;">Hugging Face API
@@ -281,6 +296,17 @@
         <button id="saveApiKey"
           style="padding: 10px 20px; background: #6366f1; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Save</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Tutorial Popups -->
+  <div id="tutorialPopup"
+    style="display: none; position: fixed; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; max-width: 280px; border: 2px solid #6366f1; top: 0; left: 0;">
+    <h3 id="tutorialTitle" style="margin: 0 0 10px 0; color: #333; font-size: 14px; font-weight: 600;"></h3>
+    <p id="tutorialBody" style="margin: 0 0 15px 0; color: #666; font-size: 12px; line-height: 1.4;"></p>
+    <div style="display: flex; justify-content: flex-end;">
+      <button id="tutorialSkipButton"
+        style="padding: 6px 12px; background: #e5e7eb; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Exit Tutorial</button>
     </div>
   </div>
 </body>

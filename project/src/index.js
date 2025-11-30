@@ -65,7 +65,7 @@ function attachSessionToIframes() {
     // Prefix proxy base when iframe src is absolute-from-root
     const resolvedBaseSrc = baseSrc.startsWith("/") ? `${basePath}${baseSrc}` : baseSrc;
     const joiner = baseSrc.includes("?") ? "&" : "?";
-    frame.src = `${resolvedBaseSrc}${joiner}session_id=${encodeURIComponent(sessionId)}`;
+    frame.src = `${resolvedBaseSrc}${joiner}session_id=${encodeURIComponent(sessionId)}&__theme=dark`;
   });
 }
 
@@ -183,7 +183,7 @@ downloadCodeButton.addEventListener("click", () => {
 // Settings button and Keys Modal
 const settingsButton = document.querySelector('#settingsButton');
 const apiKeyModal = document.querySelector('#apiKeyModal');
-const apiKeyInput = document.querySelector('#apiKeyInput');
+// const apiKeyInput = document.querySelector('#apiKeyInput');  // TEMP: No OpenAI key input field
 const hfKeyInput = document.querySelector('#hfKeyInput');
 const saveApiKeyButton = document.querySelector('#saveApiKey');
 const cancelApiKeyButton = document.querySelector('#cancelApiKey');
@@ -194,18 +194,25 @@ const HF_KEY_STORAGE = "mcp_blockly_hf_key";
 const loadStoredKeys = () => {
   const storedOpenAI = window.localStorage.getItem(OPENAI_KEY_STORAGE) || "";
   const storedHF = window.localStorage.getItem(HF_KEY_STORAGE) || "";
-  apiKeyInput.value = storedOpenAI;
-  hfKeyInput.value = storedHF;
+  // apiKeyInput.value = storedOpenAI;  // TEMP: No OpenAI key input field
+  if (hfKeyInput) {
+    hfKeyInput.value = storedHF;
+  }
 };
 
 settingsButton.addEventListener("click", () => {
-  loadStoredKeys();
+  if (hfKeyInput) {
+    loadStoredKeys();
+  } else {
+    console.warn("[Settings] HF key input not found in DOM");
+  }
   apiKeyModal.style.display = 'flex';
 });
 
 saveApiKeyButton.addEventListener("click", () => {
-  const apiKey = apiKeyInput.value.trim();
-  const hfKey = hfKeyInput.value.trim();
+  // const apiKey = apiKeyInput.value.trim();  // TEMP: No OpenAI key input field
+  const apiKey = "";  // TEMP: Using free API key, OpenAI field disabled
+  const hfKey = hfKeyInput?.value.trim() || "";
 
   // Validate OpenAI key format if provided
   if (apiKey && (!apiKey.startsWith("sk-") || apiKey.length < 40)) {
@@ -246,10 +253,11 @@ cancelApiKeyButton.addEventListener("click", () => {
 
 // Welcome Modal Setup
 const welcomeModal = document.querySelector('#welcomeModal');
-const welcomeApiKeyInput = document.querySelector('#welcomeApiKeyInput');
+// TEMPORARY FREE API KEY - welcomeApiKeyInput removed from DOM
+// const welcomeApiKeyInput = document.querySelector('#welcomeApiKeyInput');
 const welcomeHfKeyInput = document.querySelector('#welcomeHfKeyInput');
 const saveWelcomeApiKeyButton = document.querySelector('#saveWelcomeApiKey');
-const closeWelcomeModalButton = document.querySelector('#closeWelcomeModal');
+const skipTutorialButton = document.querySelector('#skipTutorialButton');
 const dontShowWelcomeAgainCheckbox = document.querySelector('#dontShowWelcomeAgain');
 
 const WELCOME_DISMISSED_COOKIE = "mcp_blockly_welcome_dismissed";
@@ -262,9 +270,11 @@ const getCookieValue = (name) => {
 };
 
 const loadWelcomeStoredKeys = () => {
-  const storedOpenAI = window.localStorage.getItem(OPENAI_KEY_STORAGE) || "";
+  // TEMPORARY FREE API KEY
+  // const storedOpenAI = window.localStorage.getItem(OPENAI_KEY_STORAGE) || "";
   const storedHF = window.localStorage.getItem(HF_KEY_STORAGE) || "";
-  welcomeApiKeyInput.value = storedOpenAI;
+  // TEMPORARY FREE API KEY - welcomeApiKeyInput removed from DOM
+  // welcomeApiKeyInput.value = storedOpenAI;
   welcomeHfKeyInput.value = storedHF;
 };
 
@@ -285,14 +295,17 @@ const hideWelcomeModal = () => {
 };
 
 saveWelcomeApiKeyButton.addEventListener("click", () => {
-  const apiKey = welcomeApiKeyInput.value.trim();
+  // TEMPORARY FREE API KEY
+  // const apiKey = welcomeApiKeyInput.value.trim();
+  const apiKey = ""; // TEMPORARY FREE API KEY - using free API
   const hfKey = welcomeHfKeyInput.value.trim();
 
-  // Validate OpenAI key format if provided
-  if (apiKey && (!apiKey.startsWith("sk-") || apiKey.length < 40)) {
-    alert("Invalid OpenAI API key format. Please enter a valid OpenAI API key (starts with 'sk-').");
-    return;
-  }
+  // TEMPORARY FREE API KEY
+  // // Validate OpenAI key format if provided
+  // if (apiKey && (!apiKey.startsWith("sk-") || apiKey.length < 40)) {
+  //   alert("Invalid OpenAI API key format. Please enter a valid OpenAI API key (starts with 'sk-').");
+  //   return;
+  // }
 
   // Validate Hugging Face key format if provided
   if (hfKey && (!hfKey.startsWith("hf_") || hfKey.length < 20)) {
@@ -306,11 +319,13 @@ saveWelcomeApiKeyButton.addEventListener("click", () => {
 
   // Share keys with backend via cookies (per-request, not stored server-side)
   const cookieOpts = "path=/; SameSite=None; Secure";
-  if (apiKey) {
-    document.cookie = `mcp_openai_key=${encodeURIComponent(apiKey)}; ${cookieOpts}`;
-  } else {
-    document.cookie = `mcp_openai_key=; Max-Age=0; ${cookieOpts}`;
-  }
+  // TEMPORARY FREE API KEY
+  // if (apiKey) {
+  //   document.cookie = `mcp_openai_key=${encodeURIComponent(apiKey)}; ${cookieOpts}`;
+  // } else {
+  //   document.cookie = `mcp_openai_key=; Max-Age=0; ${cookieOpts}`;
+  // }
+  document.cookie = `mcp_openai_key=; Max-Age=0; ${cookieOpts}`; // TEMPORARY FREE API KEY - clear free API cookie
   if (hfKey) {
     document.cookie = `mcp_hf_key=${encodeURIComponent(hfKey)}; ${cookieOpts}`;
   } else {
@@ -318,9 +333,16 @@ saveWelcomeApiKeyButton.addEventListener("click", () => {
   }
 
   hideWelcomeModal();
+  
+  // Trigger the tutorial flow
+  tutorialEnabled = true;
+  completedTutorialStepIndex = -1;
+  examplesJustFlashed = false;
+  checkAndFlashExamplesButton();
 });
 
-closeWelcomeModalButton.addEventListener("click", () => {
+skipTutorialButton.addEventListener("click", () => {
+  tutorialEnabled = false;
   hideWelcomeModal();
 });
 
@@ -337,11 +359,382 @@ if (!welcomeDismissed) {
   console.log('[Welcome] Welcome modal dismissed, skipping');
 }
 
-const weatherText = '{"workspaceComments":[{"height":80,"width":477,"id":"XI5[EHp-Ow+kinXf6n5y","x":52.674375,"y":-52.760000000000005,"text":"Gets temperature of location with a latitude and a longitude."}],"blocks":{"languageVersion":0,"blocks":[{"type":"create_mcp","id":")N.HEG1x]Z/,k#TeWr,S","x":50,"y":50,"deletable":false,"extraState":{"inputCount":2,"inputNames":["latitude","longitude"],"inputTypes":["string","string"],"outputCount":1,"outputNames":["output0"],"outputTypes":["string"],"toolCount":0},"inputs":{"X0":{"block":{"type":"input_reference_latitude","id":"]3mj!y}qfRt+!okheU7L","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}},"X1":{"block":{"type":"input_reference_longitude","id":"Do/{HFNGSd.!;POiKS?D","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"longitude"}}},"R0":{"block":{"type":"in_json","id":"R|j?_8s^H{l0;UZ-oQt3","inputs":{"NAME":{"block":{"type":"text","id":"@Z+@U^@8c0gQYj}La`PY","fields":{"TEXT":"temperature_2m"}}},"JSON":{"block":{"type":"in_json","id":"X=M,R1@7bRjJVZIPi[qD","inputs":{"NAME":{"block":{"type":"text","id":"OMr~`#kG$3@k`YPDHbzH","fields":{"TEXT":"current"}}},"JSON":{"block":{"type":"call_api","id":"^(.vyM.yni08S~c1EBm=","fields":{"METHOD":"GET"},"inputs":{"URL":{"shadow":{"type":"text","id":"}.T;_U_OsRS)B_y09p % { ","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"OwH9uERJPTGQG!UER#ch","inputs":{"FROM":{"shadow":{"type":"text","id":"ya05#^ 7 % UbUeXX#eDSmH","fields":{"TEXT":"{latitude}"}},"block":{"type":"text","id":"6CX#+wo9^x+vZ`LRt5ms","fields":{"TEXT":"{latitude}"}}},"TO":{"shadow":{"type":"text","id":": _ZloQuh9c-MNf-U]!k5","fields":{"TEXT":""}},"block":{"type":"input_reference_latitude","id":"?%@)3sErZ)}=#4ags#gu","extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}},"TEXT":{"shadow":{"type":"text","id":"w@zsP)m6:WjkUp,ln3$x","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"ImNPsvzD7r^+1MJ%IirV","inputs":{"FROM":{"shadow":{"type":"text","id":"%o(3rro?WLIFpmE0#MMM","fields":{"TEXT":"{longitude}"}},"block":{"type":"text","id":"`p!s8dQ7e~?0JvofyB-{","fields":{"TEXT":"{longitude}"}}},"TO":{"shadow":{"type":"text","id":"Zpql-%oJ_sdSi | r |* er | ","fields":{"TEXT":""}},"block":{"type":"input_reference_longitude","id":"WUgiJP$X + zY#f$5nhnTX","extraState":{"ownerBlockId":") N.HEG1x]Z /, k#TeWr, S"},"fields":{"VARNAME":"longitude"}}},"TEXT":{"shadow":{"type":"text","id":", (vw$o_s7P = b4P; 8]}yj","fields":{"TEXT":"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,wind_speed_10m"}}}}}}}}}}}}}}}}}}}}]}}';
+const weatherText = '{"workspaceComments":[{"height":80,"width":477,"id":"XI5[EHp-Ow+kinXf6n5y","x":51.0743994140625,"y":-53.56000305175782,"text":"Gets temperature of location with a latitude and a longitude."}],"blocks":{"languageVersion":0,"blocks":[{"type":"create_mcp","id":")N.HEG1x]Z/,k#TeWr,S","x":50,"y":50,"deletable":false,"extraState":{"inputCount":2,"inputNames":["latitude","longitude"],"inputTypes":["float","float"],"outputCount":1,"outputNames":["output0"],"outputTypes":["float"],"toolCount":0},"inputs":{"X0":{"block":{"type":"input_reference_latitude","id":"]3mj!y}qfRt+!okheU7L","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}},"X1":{"block":{"type":"input_reference_longitude","id":"Do/{HFNGSd.!;POiKS?D","deletable":false,"extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"longitude"}}},"R0":{"block":{"type":"cast_as","id":"vKz#fsrWMW(M9*:3Pv;2","fields":{"TYPE":"float"},"inputs":{"VALUE":{"block":{"type":"in_json","id":"R|j?_8s^H{l0;UZ-oQt3","inputs":{"NAME":{"block":{"type":"text","id":"@Z+@U^@8c0gQYj}La`PY","fields":{"TEXT":"temperature_2m"}}},"JSON":{"block":{"type":"in_json","id":"X=M,R1@7bRjJVZIPi[qD","inputs":{"NAME":{"block":{"type":"text","id":"OMr~`#kG$3@k`YPDHbzH","fields":{"TEXT":"current"}}},"JSON":{"block":{"type":"call_api","id":"^(.vyM.yni08S~c1EBm=","fields":{"METHOD":"GET"},"inputs":{"URL":{"shadow":{"type":"text","id":"}.T;_U_OsRS)B_y09p % { ","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"OwH9uERJPTGQG!UER#ch","inputs":{"FROM":{"shadow":{"type":"text","id":"ya05#^ 7 % UbUeXX#eDSmH","fields":{"TEXT":"{latitude}"}},"block":{"type":"text","id":"6CX#+wo9^x+vZ`LRt5ms","fields":{"TEXT":"{latitude}"}}},"TO":{"shadow":{"type":"text","id":": _ZloQuh9c-MNf-U]!k5","fields":{"TEXT":""}},"block":{"type":"cast_as","id":"qXXp2GSF;@+ssDvHN={+","fields":{"TYPE":"str"},"inputs":{"VALUE":{"block":{"type":"input_reference_latitude","id":"?%@)3sErZ)}=#4ags#gu","extraState":{"ownerBlockId":")N.HEG1x]Z/,k#TeWr,S"},"fields":{"VARNAME":"latitude"}}}}}},"TEXT":{"shadow":{"type":"text","id":"w@zsP)m6:WjkUp,ln3$x","fields":{"TEXT":""}},"block":{"type":"text_replace","id":"ImNPsvzD7r^+1MJ%IirV","inputs":{"FROM":{"shadow":{"type":"text","id":"%o(3rro?WLIFpmE0#MMM","fields":{"TEXT":"{longitude}"}},"block":{"type":"text","id":"`p!s8dQ7e~?0JvofyB-{","fields":{"TEXT":"{longitude}"}}},"TO":{"shadow":{"type":"text","id":"Zpql-%oJ_sdSi | r |* er | ","fields":{"TEXT":""}},"block":{"type":"cast_as","id":"T5r7Y,;]kq2wClH)JUf8","fields":{"TYPE":"str"},"inputs":{"VALUE":{"block":{"type":"input_reference_longitude","id":"WUgiJP$X + zY#f$5nhnTX","extraState":{"ownerBlockId":") N.HEG1x]Z /, k#TeWr, S"},"fields":{"VARNAME":"longitude"}}}}}},"TEXT":{"shadow":{"type":"text","id":", (vw$o_s7P = b4P; 8]}yj","fields":{"TEXT":"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,wind_speed_10m"}}}}}}}}}}}}}}}}}}}}}}}]}}';
+let examplesJustFlashed = false;
+let selectedExample = null; // Track which example was selected
+let tutorialEnabled = false; // Track if tutorial is enabled
+
+// Tutorial popup management
+const tutorialStepOrder = ['examples', 'refresh', 'test', 'aiAssistant', 'send'];
+let completedTutorialStepIndex = -1;
+const getTutorialStepIndex = (step) => tutorialStepOrder.indexOf(step);
+const hasCompletedStepOrBeyond = (step) => {
+  const idx = getTutorialStepIndex(step);
+  return idx !== -1 && completedTutorialStepIndex >= idx;
+};
+const markTutorialStepComplete = (step) => {
+  const idx = getTutorialStepIndex(step);
+  if (idx > completedTutorialStepIndex) {
+    completedTutorialStepIndex = idx;
+  }
+};
+let currentTutorialStep = null;
+const tutorialPopup = document.getElementById('tutorialPopup');
+const tutorialTitle = document.getElementById('tutorialTitle');
+const tutorialBody = document.getElementById('tutorialBody');
+const tutorialSkipButton = document.getElementById('tutorialSkipButton');
+console.log('[TUTORIAL] Popup elements:', { tutorialPopup, tutorialTitle, tutorialBody, tutorialSkipButton });
+
+const tutorialContent = {
+  examples: {
+    title: '1/5 Try an Example',
+    body: 'Click on one of the example workflows to get started quickly.'
+  },
+  refresh: {
+    title: '2/5 Refresh Info',
+    body: 'Click the Refresh button to update the inputs and outputs of your MCP server.'
+  },
+  test: {
+    title: '3/5 Run Your Test',
+    get body() {
+      if (selectedExample === 'weather') {
+        return 'Enter a latitude (-90 to 90) and longitude (-180 to 80), then press Test to get the current temperature at that location!';
+      } else if (selectedExample === 'fact') {
+        return 'Enter a claim you want to verify, then press Test to check if it\'s true!';
+      }
+      return 'Enter some values in your MCP inputs, and press the Test button to see its output.';
+    }
+  },
+  aiAssistant: {
+    title: '4/5 Get AI Guidance',
+    body: 'Use the AI Assistant tab to get help with your code.'
+  },
+  send: {
+    title: '5/5 Send a Message',
+    body: 'Try using one of the three suggested prompts (click on one of the buttons), or write one of your own!'
+  }
+};
+
+const showTutorialPopup = (step, targetElement) => {
+  console.log('[TUTORIAL] showTutorialPopup called for step:', step, 'element:', targetElement);
+  if (!tutorialContent[step]) {
+    console.log('[TUTORIAL] Content not found for step:', step);
+    return;
+  }
+  
+  currentTutorialStep = step;
+  tutorialTitle.textContent = tutorialContent[step].title;
+  // Handle both regular string body and getter function
+  const bodyContent = typeof tutorialContent[step].body === 'function' 
+    ? tutorialContent[step].body() 
+    : tutorialContent[step].body;
+  tutorialBody.textContent = bodyContent;
+  tutorialPopup.style.display = 'block';
+  console.log('[TUTORIAL] Popup display set to block');
+  
+  // Position the popup next to the target element
+  if (targetElement) {
+    setTimeout(() => {
+      const rect = targetElement.getBoundingClientRect();
+      const popupWidth = 280;
+      const popupHeight = 150; // Approximate height
+      const spacing = 25;
+      console.log('[TUTORIAL] Target element rect:', rect, 'window:', window.innerWidth, 'x', window.innerHeight);
+      
+      let top = rect.top;
+      let left = rect.right + spacing;
+      
+      // Priority 1: Try to place to the right
+      if (left + popupWidth > window.innerWidth) {
+        // Priority 2: Try to place below
+        left = rect.left;
+        top = rect.bottom + spacing;
+        
+        if (top + popupHeight > window.innerHeight) {
+          // Priority 3: Place to the left
+          left = rect.left - popupWidth - spacing;
+          top = rect.top;
+        }
+      }
+      
+      console.log('[TUTORIAL] Setting popup position to top:', top, 'left:', left);
+      tutorialPopup.style.top = `${top}px`;
+      tutorialPopup.style.left = `${left}px`;
+    }, 50);
+  }
+};
+
+const hideTutorialPopup = () => {
+  tutorialPopup.style.display = 'none';
+  currentTutorialStep = null;
+};
+
+tutorialSkipButton.addEventListener('click', () => {
+  // Stop the tutorial and remove all flashing indicators (including inside iframes)
+  tutorialEnabled = false;
+  examplesJustFlashed = false;
+  document.querySelectorAll('.flash-button').forEach(el => el.classList.remove('flash-button'));
+  const iframes = document.querySelectorAll('iframe');
+  for (const iframe of iframes) {
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc?.querySelectorAll('.flash-button').forEach(el => el.classList.remove('flash-button'));
+    } catch (e) {
+      // Ignore cross-origin frames
+    }
+  }
+  hideTutorialPopup();
+});
+
+const loadSendButtonFlash = () => {
+  if (!tutorialEnabled) return;
+  // Find send button in the chat iframe (it's the button with just an SVG icon)
+  let sendBtn = null;
+  let iframeDoc = null;
+  
+  console.log('[TUTORIAL] Looking for send button in iframes');
+  const iframes = document.querySelectorAll('iframe');
+  for (const iframe of iframes) {
+    try {
+      iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      if (iframeDoc) {
+        // Look for send button - it's the one with SVG viewBox="0 0 22 24"
+        const buttons = iframeDoc.querySelectorAll('button');
+        console.log('[TUTORIAL] Found', buttons.length, 'buttons in iframe');
+        for (let btn of buttons) {
+          // Look for the button with the send SVG (has viewBox="0 0 22 24")
+          if (btn.innerHTML.includes('viewBox="0 0 22 24"')) {
+            console.log('[TUTORIAL] Found send button with SVG!');
+            sendBtn = btn;
+            break;
+          }
+        }
+        if (sendBtn) break;
+      }
+    } catch (e) {
+      // Cannot access iframe, continue
+      console.log('[TUTORIAL] Cannot access iframe:', e);
+    }
+  }
+  
+  console.log('[TUTORIAL] Send button found?', !!sendBtn);
+  if (sendBtn && iframeDoc) {
+    // Inject CSS if needed
+    const styleId = 'send-flash-style';
+    if (!iframeDoc.getElementById(styleId)) {
+      const style = iframeDoc.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        @keyframes pulseOutline {
+          0% {
+            box-shadow: 0 0 0 0 rgba(255, 255, 255, 1);
+          }
+          75% {
+            box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+          }
+        }
+        
+        .flash-button {
+          animation: pulseOutline 1s ease-out infinite !important;
+        }
+      `;
+      iframeDoc.head.appendChild(style);
+    }
+    
+    sendBtn.classList.add('flash-button');
+    showTutorialPopup('send', sendBtn);
+    
+    // Watch for when the send button gets removed/replaced (which happens when message is sent)
+    const observer = new MutationObserver((mutations) => {
+      console.log('[TUTORIAL] Send button DOM changed - message was sent');
+      hideTutorialPopup();
+      observer.disconnect();
+    });
+    
+    // Observe the button's parent for changes (including removal/replacement)
+    if (sendBtn.parentElement) {
+      observer.observe(sendBtn.parentElement, {
+        childList: true,
+        subtree: true
+      });
+    }
+  }
+};
+
+const loadAiAssistantTabFlash = () => {
+  if (!tutorialEnabled || hasCompletedStepOrBeyond('aiAssistant')) return;
+  const aiTab = document.querySelector('[data-tab="aichat"]');
+  if (aiTab) {
+    aiTab.classList.add('flash-button');
+    showTutorialPopup('aiAssistant', aiTab);
+    
+    // Remove flash on click
+    const removeFlash = () => {
+      aiTab.classList.remove('flash-button');
+      aiTab.removeEventListener('click', removeFlash);
+      markTutorialStepComplete('aiAssistant');
+      hideTutorialPopup();
+      // After AI Assistant tab is clicked, flash the send button
+      setTimeout(() => {
+        loadSendButtonFlash();
+      }, 500);
+    };
+    aiTab.addEventListener('click', removeFlash);
+  }
+};
+
+const loadExamplesButtonFlash = () => {
+  if (!tutorialEnabled || hasCompletedStepOrBeyond('examples')) return;
+  const examplesButton = Array.from(document.querySelectorAll('.menuButton')).find(btn => btn.textContent === 'Examples');
+  console.log('[TUTORIAL] Examples button found:', examplesButton);
+  if (examplesButton) {
+    examplesButton.classList.add('flash-button');
+    examplesJustFlashed = true;
+    console.log('[TUTORIAL] Showing examples popup');
+    showTutorialPopup('examples', examplesButton);
+  } else {
+    console.log('[TUTORIAL] Examples button NOT found');
+  }
+};
+
+const loadTestButtonFlash = (testBtn, iframeDoc) => {
+  if (!tutorialEnabled || hasCompletedStepOrBeyond('test') || !testBtn || !iframeDoc) return;
+  if (testBtn && iframeDoc) {
+    testBtn.classList.add('flash-button');
+    showTutorialPopup('test', testBtn);
+    
+    // Remove flash on click
+    const removeFlash = () => {
+      testBtn.classList.remove('flash-button');
+      testBtn.removeEventListener('click', removeFlash);
+      markTutorialStepComplete('test');
+      hideTutorialPopup();
+      // After Test is clicked, wait 5 seconds then flash the AI Assistant tab
+      setTimeout(() => {
+        loadAiAssistantTabFlash();
+      }, 5000);
+    };
+    testBtn.addEventListener('click', removeFlash);
+  }
+};
+
+const loadRefreshButtonFlash = () => {
+  if (!tutorialEnabled || hasCompletedStepOrBeyond('refresh')) return;
+  let refreshBtn = null;
+  let testBtn = null;
+  let iframeDoc = null;
+  
+  // Check iframes for the Refresh and Test buttons
+  const iframes = document.querySelectorAll('iframe');
+  for (const iframe of iframes) {
+    try {
+      iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      if (iframeDoc) {
+        const iframeButtons = iframeDoc.querySelectorAll('button');
+        
+        // Try to find Refresh and Test buttons in this iframe
+        for (let btn of iframeButtons) {
+          if (btn.textContent.includes('Refresh') || btn.innerHTML.includes('Refresh')) {
+            refreshBtn = btn;
+          }
+          if (btn.textContent.includes('Test') && btn.classList.contains('secondary')) {
+            testBtn = btn;
+          }
+          if (refreshBtn && testBtn) break;
+        }
+        
+        if (refreshBtn && testBtn) break;
+      }
+    } catch (e) {
+      // Cannot access iframe, continue
+    }
+  }
+  
+  if (refreshBtn && iframeDoc) {
+    // Inject CSS into the iframe if needed
+    const styleId = 'refresh-flash-style';
+    if (!iframeDoc.getElementById(styleId)) {
+      const style = iframeDoc.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        @keyframes pulseOutline {
+          0% {
+            box-shadow: 0 0 0 0 rgba(255, 255, 255, 1);
+          }
+          75% {
+            box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+          }
+        }
+        
+        .flash-button {
+          animation: pulseOutline 1s ease-out infinite !important;
+        }
+      `;
+      iframeDoc.head.appendChild(style);
+    }
+    
+    refreshBtn.classList.add('flash-button');
+    showTutorialPopup('refresh', refreshBtn);
+    
+    // Remove flash on click
+    const removeFlash = () => {
+      refreshBtn.classList.remove('flash-button');
+      refreshBtn.removeEventListener('click', removeFlash);
+      markTutorialStepComplete('refresh');
+      hideTutorialPopup();
+      // After Refresh is clicked, flash the Test button
+      if (testBtn) {
+        loadTestButtonFlash(testBtn, iframeDoc);
+      }
+    };
+    refreshBtn.addEventListener('click', removeFlash);
+  } else {
+    // Retry after a delay if button not found yet
+    setTimeout(loadRefreshButtonFlash, 1000);
+  }
+};
+
+const checkAndFlashExamplesButton = () => {
+  console.log('[TUTORIAL] checkAndFlashExamplesButton called, tutorialEnabled:', tutorialEnabled, 'examplesJustFlashed:', examplesJustFlashed);
+  if (!tutorialEnabled) {
+    console.log('[TUTORIAL] Tutorial disabled, skipping');
+    return;
+  }
+  if (hasCompletedStepOrBeyond('examples')) {
+    console.log('[TUTORIAL] Examples step already completed, skipping');
+    return;
+  }
+  if (!examplesJustFlashed) {
+    // Flash the examples button immediately
+    console.log('[TUTORIAL] About to call loadExamplesButtonFlash');
+    loadExamplesButtonFlash();
+  }
+};
+
 weatherButton.addEventListener("click", () => {
   try {
+    selectedExample = 'weather';
     const fileContent = JSON.parse(weatherText);
     Blockly.serialization.workspaces.load(fileContent, ws);
+    const shouldHandleTutorial = tutorialEnabled && !hasCompletedStepOrBeyond('examples');
+    if (shouldHandleTutorial) {
+      // Example loaded - stop flashing Examples button and move to Refresh
+      const examplesButton = Array.from(document.querySelectorAll('.menuButton')).find(btn => btn.textContent === 'Examples');
+      if (examplesButton) {
+        examplesButton.classList.remove('flash-button');
+      }
+      hideTutorialPopup();
+      examplesJustFlashed = false;
+      markTutorialStepComplete('examples');
+      // Flash refresh button when example is selected
+      loadRefreshButtonFlash();
+    }
   } catch (error) {
     console.error("Error loading weather.txt contents:", error);
   }
@@ -350,8 +743,22 @@ weatherButton.addEventListener("click", () => {
 const factText = "{\"workspaceComments\":[{\"height\":66,\"width\":575,\"id\":\"x/Z2E2Oid(4||-pQ)h*;\",\"x\":51.00000000000023,\"y\":-35.76388082917071,\"text\":\"A fact checker that uses a searching LLM to verify the validity of a claim.\"}],\"blocks\":{\"languageVersion\":0,\"blocks\":[{\"type\":\"create_mcp\",\"id\":\"yScKJD/XLhk)D}qn2TW:\",\"x\":50,\"y\":50,\"deletable\":false,\"extraState\":{\"inputCount\":1,\"inputNames\":[\"prompt\"],\"inputTypes\":[\"string\"],\"outputCount\":1,\"outputNames\":[\"result\"],\"outputTypes\":[\"string\"],\"toolCount\":0},\"inputs\":{\"X0\":{\"block\":{\"type\":\"input_reference_prompt\",\"id\":\"-r%M-[oX1]?RxxF_V(V@\",\"deletable\":false,\"extraState\":{\"ownerBlockId\":\"yScKJD/XLhk)D}qn2TW:\"},\"fields\":{\"VARNAME\":\"prompt\"}}},\"R0\":{\"block\":{\"type\":\"llm_call\",\"id\":\"m/*D8ZBx;QZlUN*aw15U\",\"fields\":{\"MODEL\":\"gpt-4o-search-preview-2025-03-11\"},\"inputs\":{\"PROMPT\":{\"block\":{\"type\":\"text_join\",\"id\":\"e@#`RVKXpIZ9__%zUK]`\",\"extraState\":{\"itemCount\":3},\"inputs\":{\"ADD0\":{\"block\":{\"type\":\"text\",\"id\":\"M3QD})k`FXiizaF,gA{9\",\"fields\":{\"TEXT\":\"Verify whether the following claim: \\\"\"}}},\"ADD1\":{\"block\":{\"type\":\"input_reference_prompt\",\"id\":\"B4.LNZ0es`RFM0Xi@SL:\",\"extraState\":{\"ownerBlockId\":\"yScKJD/XLhk)D}qn2TW:\"},\"fields\":{\"VARNAME\":\"prompt\"}}},\"ADD2\":{\"block\":{\"type\":\"text\",\"id\":\"Ng!fFR+xTMdmgWZv6Oh{\",\"fields\":{\"TEXT\":\"\\\" is true or not. Return one of the following values: \\\"True\\\", \\\"Unsure\\\", \\\"False\\\", and nothing else. You may not say anything but one of these answers no matter what.\"}}}}}}}}}}}]}}"
 factButton.addEventListener("click", () => {
   try {
+    selectedExample = 'fact';
     const fileContent = JSON.parse(factText);
     Blockly.serialization.workspaces.load(fileContent, ws);
+    const shouldHandleTutorial = tutorialEnabled && !hasCompletedStepOrBeyond('examples');
+    if (shouldHandleTutorial) {
+      // Example loaded - stop flashing Examples button and move to Refresh
+      const examplesButton = Array.from(document.querySelectorAll('.menuButton')).find(btn => btn.textContent === 'Examples');
+      if (examplesButton) {
+        examplesButton.classList.remove('flash-button');
+      }
+      hideTutorialPopup();
+      examplesJustFlashed = false;
+      markTutorialStepComplete('examples');
+      // Flash refresh button when example is selected
+      loadRefreshButtonFlash();
+    }
   } catch (error) {
     console.error("Error loading weather.txt contents:", error);
   }
